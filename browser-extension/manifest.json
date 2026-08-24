@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Visual Browser Agent Bridge",
+  "version": "1.0",
+  "description": "Bridges Chrome DevTools Protocol to the Visual Browser Agent MCP server",
+  "permissions": ["debugger", "tabs", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Visual Browser Agent"
+  }
+}
