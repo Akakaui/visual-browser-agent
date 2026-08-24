@@ -1,64 +1,57 @@
-# Install Visual Browser Agent
+# How to Install Visual Browser Agent
 
-## For AI Agents
+## For You (Simple Instructions)
 
-When a user asks you to install the Visual Browser Agent, follow these steps:
+Just tell your AI agent:
 
-### Step 1: Clone and Install
+> "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and use it to [your task]"
 
-```bash
-git clone https://github.com/Akakaui/visual-browser-agent.git
-cd visual-browser-agent
-npm install
-npm run build
-```
+Your agent will handle everything automatically.
 
-### Step 2: Initialize
+---
 
-```bash
-npx visual-browser-agent init
-```
+## Example Tasks
 
-This will:
-- Install Chromium (Playwright browser)
-- Set up MCP configuration
-- Install Agent Skills
-- Auto-detect your coding agent and install the wrapper
+### Research a website
+> "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and research this website's design"
 
-### Step 3: Test
+### Check Facebook
+> "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and check my Facebook"
 
-```bash
-npx visual-browser-agent doctor
-```
+### Take screenshots
+> "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and take screenshots of this website"
 
-### Step 4: Use
+---
 
-Start the MCP server:
+## What Your Agent Will Do
 
-```bash
-npx visual-browser-agent mcp
-```
+1. Clone the repo from GitHub
+2. Install all dependencies
+3. Build the project
+4. Install Chromium (browser)
+5. Set up MCP configuration
+6. Install skills
+7. Start using the browser
 
-Then use the browser tools to complete tasks.
+You don't need to do anything technical.
+
+---
+
+## If Something Goes Wrong
+
+Ask your agent:
+
+> "Run npx visual-browser-agent doctor to check the environment"
+
+This will show what's working and what needs fixing.
 
 ---
 
 ## Quick Reference
 
-| Command | What it does |
-|---------|--------------|
-| `npx visual-browser-agent init` | Install everything |
-| `npx visual-browser-agent mcp` | Start MCP server with Chromium |
-| `npx visual-browser-agent mcp --extension` | Start with Chrome extension |
-| `npx visual-browser-agent doctor` | Check environment |
-| `npx visual-browser-agent profiles` | List Chrome profiles |
-
----
-
-## For Users
-
-Just tell your agent:
-
-> "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and use it to [your task]"
-
-Your agent will handle everything.
+| What you want | What to say to your agent |
+|---------------|---------------------------|
+| Install and use | "Install visual-browser-agent from https://github.com/Akakaui/visual-browser-agent and use it to [task]" |
+| Check if it's working | "Run npx visual-browser-agent doctor" |
+| List Chrome profiles | "Run npx visual-browser-agent profiles" |
+| Use Chrome instead of Chromium | "Use npx visual-browser-agent mcp --extension" |
