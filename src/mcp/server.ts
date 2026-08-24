@@ -61,6 +61,21 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: { type: 'object', properties: {} }
       },
       {
+        name: 'browser_profiles',
+        description: 'List friendly Chrome identities/accounts available for browser selection',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'browser_doctor',
+        description: 'Diagnose Chrome, Chromium, extension, profile, and connection readiness',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'browser_select_profile',
+        description: 'Select a Chrome identity by friendly name or email without requiring a terminal command',
+        inputSchema: { type: 'object', properties: { identity: { type: 'string' }, headless: { type: 'boolean', default: false } }, required: ['identity'] }
+      },
+      {
         name: 'browser_connect',
         description: 'Connect to a browser automatically, or explicitly use existing Chrome, managed Chromium, or CDP',
         inputSchema: {
@@ -484,6 +499,26 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
       switch (name) {
         case 'browser_status': {
           const status = await browserAdapter.getStatus();
+          return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
+        }
+
+        case 'browser_profiles': {
+          const { listProfiles } = await import('../cli/profiles.js');
+          const profiles = await listProfiles();
+          return { content: [{ type: 'text', text: JSON.stringify(profiles.map(profile => ({ name: profile.displayName || profile.name, email: profile.accountEmail, technicalName: profile.name, default: profile.isDefault })), null, 2) }] };
+        }
+
+        case 'browser_doctor': {
+          const { getChromePath, getDebugPort, listProfiles } = await import('../cli/profiles.js');
+          const profiles = await listProfiles();
+          const debugPort = await getDebugPort();
+          return { content: [{ type: 'text', text: JSON.stringify({ chromium: 'available through Playwright', chromePath: getChromePath(), chromeProfiles: profiles.length, debugPort, extensionLikelyAvailable: Boolean(debugPort), connected: (await browserAdapter.getStatus()).connected }, null, 2) }] };
+        }
+
+        case 'browser_select_profile': {
+          const { launchChromeWithProfile } = await import('../cli/profiles.js');
+          const selected = await launchChromeWithProfile((args as any).identity, 9222);
+          const status = await browserAdapter.connect({ mode: 'extension', extensionPort: selected, headless: Boolean((args as any).headless) });
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
         }
 
