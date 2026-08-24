@@ -1,6 +1,28 @@
 # Visual Browser Agent
 
-A local-first browser automation tool that gives AI agents "eyes and hands" for web interaction.
+A local-first browser automation tool that gives AI agents “eyes and hands” for web interaction. Visual Browser Agent is **Playwright plus an agent control plane**: Playwright performs the browser work, while this project adds MCP tools, visual evidence, approvals, Chrome identity handling, safety controls, and workflows for coding agents and everyday browser tasks.
+
+## What happens after installation
+
+You do not need to understand Chromium, CDP, remote debugging, or Chrome’s internal profile names.
+
+A technical installer registers Visual Browser Agent with the coding agent you use and installs the Playwright browser runtime. After that, your normal workflow happens in the coding-agent chat. You can say:
+
+```text
+Use the browser to open this website and check the layout.
+```
+
+The agent first checks whether an existing Chrome session is available. If it finds one, it uses that session; otherwise it launches a clean Playwright-managed Chromium session. You can also be explicit in ordinary language:
+
+```text
+Use my Work Chrome account and check the dashboard.
+```
+
+The agent discovers friendly Chrome identities such as “Work — work@example.com” and “Personal — personal@example.com.” If there is more than one possible identity, it asks you to choose in the conversation. You do not run a profile command or select `Profile 3`.
+
+Visual Browser Agent also includes an optional local control panel. A technical user can start it with `npx visual-browser-agent dashboard`, but the control panel is not required for normal use. It shows connection health, the active tab, available Chrome identities, and recent evidence at `http://127.0.0.1:8787/`.
+
+Before the agent logs in, sends a message, publishes, purchases, deletes, submits, or changes external data, it pauses and asks for approval. Read-only inspection, screenshots, visual audits, and evidence capture can proceed automatically.
 
 ## How It Works
 
@@ -20,7 +42,17 @@ There are **two browsers** and **two connection methods**:
 
 ## Installation
 
-### Option 1: From GitHub (Recommended for Testing)
+### Option 1: Ask your coding agent to install it
+
+In Claude Code, Cursor, Copilot, Codex, Gemini, Windsurf, Cline, Roo, Kiro, Goose, OpenCode, Antigravity, or another MCP-capable coding agent, ask:
+
+```text
+Install Visual Browser Agent, set it up for this coding agent, and check that the browser runtime is ready. Ask me before installing software or changing browser settings.
+```
+
+The agent should check setup status, ask for confirmation before installing Playwright Chromium, register the MCP server, and report any missing permission or extension step. Then you can simply say “use the browser to …”.
+
+### Option 2: From GitHub (Recommended for Testing)
 
 ```bash
 # Clone the repo
@@ -43,7 +75,7 @@ Or use directly with npx:
 npx github:Akakaui/visual-browser-agent init
 ```
 
-### Option 2: From npm (After Publishing)
+### Option 3: From npm (After Publishing)
 
 ```bash
 # Install globally
@@ -53,7 +85,7 @@ npm install -g visual-browser-agent
 npx visual-browser-agent init
 ```
 
-### Option 3: Local Development
+### Option 4: Local Development
 
 ```bash
 # Clone the repo
