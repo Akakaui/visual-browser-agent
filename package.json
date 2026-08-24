@@ -69,6 +69,8 @@
     "dist",
     "bin",
     "skills",
-    "wrappers"
+    "wrappers",
+    "browser-extension",
+    "EXTENSION_INSTALLATION.md"
   ]
 }
