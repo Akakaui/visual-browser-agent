@@ -1,5 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { readFile } from 'fs/promises';
+import { extname } from 'path';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -564,8 +566,13 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'capture_screenshot': {
-          const result = await browserAdapter.captureScreenshot(args as any);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          const result = await browserAdapter.captureScreenshot(args as any) as any;
+          const artifactPath = result.path || result.filepath || result.filename;
+          const content: any[] = [{ type: 'text', text: JSON.stringify({ ...result, artifact: artifactPath ? { name: artifactPath.split(/[\\\\/]/).pop(), path: artifactPath, mimeType: 'image/png', preview: true } : undefined }, null, 2) }];
+          if (artifactPath) {
+            try { content.push({ type: 'image', data: (await readFile(artifactPath)).toString('base64'), mimeType: 'image/png' }); } catch {}
+          }
+          return { content };
         }
 
         case 'record_interaction': {
@@ -621,7 +628,7 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
 
         case 'pdf_save': {
           const path = await browserAdapter.savePdf((args as any)?.filename);
-          return { content: [{ type: 'text', text: `PDF saved to: ${path}` }] };
+          return { content: [{ type: 'text', text: JSON.stringify({ artifact: { name: path.split(/[\\\\/]/).pop(), path, mimeType: 'application/pdf', preview: true } }) }] };
         }
 
         case 'tabs': {
@@ -729,7 +736,8 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'trace_stop': {
-          return { content: [{ type: 'text', text: `Trace saved to: ${await browserAdapter.stopTracing((args as any)?.filename)}` }] };
+          const path = await browserAdapter.stopTracing((args as any)?.filename);
+          return { content: [{ type: 'text', text: JSON.stringify({ artifact: { name: path.split(/[\\\\/]/).pop(), path, mimeType: 'application/zip', preview: false } }) }] };
         }
 
         case 'emulate_media': {
