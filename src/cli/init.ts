@@ -6,14 +6,15 @@ import { SkillManager } from '../skills/manager.js';
 
 const CONFIG_TEMPLATE = '# Visual Browser Agent Configuration\n' +
   'browser:\n' +
-  '  # chrome: Use existing Chrome with your profiles (default)\n' +
-  '  # managed: Use Chromium (Playwright)\n' +
-  '  mode: chrome\n' +
+  '  # chromium: Use Playwright Chromium (default, works everywhere)\n' +
+  '  # chrome: Use existing Chrome with your profiles\n' +
+  '  mode: chromium\n' +
   '\n' +
-  '  # Chrome profile to use (run: npx visual-browser-agent profiles)\n' +
+  '  # Chrome profile to use (only if mode: chrome)\n' +
+  '  # Run: npx visual-browser-agent profiles\n' +
   '  # profile: Default\n' +
   '\n' +
-  '  # Chrome debug port\n' +
+  '  # Chrome debug port (only if mode: chrome)\n' +
   '  port: 9222\n' +
   '\n' +
   'observation:\n' +
@@ -30,7 +31,7 @@ const CONFIG_TEMPLATE = '# Visual Browser Agent Configuration\n' +
   '  maxAgeDays: 30\n' +
   '  maxRunHistorySize: 200\n';
 
-export async function initProject(mode: string = 'chrome'): Promise<void> {
+export async function initProject(mode: string = 'chromium'): Promise<void> {
   console.log(chalk.bold('\nVisual Browser Agent - Init\n'));
 
   const configPath = join(process.cwd(), 'visual-browser-agent.config.yaml');
@@ -45,22 +46,29 @@ export async function initProject(mode: string = 'chrome'): Promise<void> {
     console.log(chalk.green('Created visual-browser-agent.config.yaml'));
   }
 
-  // Check Chrome
+  // Install Chromium (default)
+  console.log(chalk.bold('\nInstalling Chromium...\n'));
+  try {
+    const { execSync } = await import('child_process');
+    execSync('npx playwright install chromium', { stdio: 'inherit', timeout: 120000 });
+    console.log(chalk.green('Chromium installed!'));
+  } catch {
+    console.log(chalk.yellow('Could not install Chromium automatically.'));
+    console.log('Run manually: npx playwright install chromium');
+  }
+
+  // Check Chrome (optional)
   if (isChromeInstalled()) {
-    console.log(chalk.green('Chrome found'));
+    console.log(chalk.green('\nChrome detected (optional)'));
     const profiles = await listProfiles();
     console.log('  ' + profiles.length + ' profile(s) available');
 
     if (profiles.length > 0) {
-      console.log(chalk.bold('\nProfiles:'));
+      console.log(chalk.bold('\nChrome Profiles:'));
       profiles.forEach(p => console.log('  ' + chalk.cyan(p.name) + ' - ' + (p.displayName || p.name)));
-      const firstName = profiles[0]?.name || 'Default';
-      console.log('\nUse: npx visual-browser-agent mcp --profile "' + firstName + '"');
+      console.log('\nTo use Chrome with your profiles:');
+      console.log('  npx visual-browser-agent mcp --profile "Default"');
     }
-  } else {
-    console.log(chalk.yellow('Chrome not found'));
-    console.log('  Chromium will be used (run: npx playwright install chromium)');
-    console.log('\nUse: npx visual-browser-agent mcp');
   }
 
   // Install skills
@@ -69,16 +77,7 @@ export async function initProject(mode: string = 'chrome'): Promise<void> {
   await skillManager.install('all');
 
   console.log(chalk.bold('\nSetup complete!\n'));
-
-  if (isChromeInstalled()) {
-    const profiles = await listProfiles();
-    if (profiles.length > 0) {
-      const firstName = profiles[0]?.name || 'Default';
-      console.log(chalk.bold('Quick start:'));
-      console.log('  npx visual-browser-agent mcp --profile "' + firstName + '"');
-    }
-  } else {
-    console.log(chalk.bold('Quick start:'));
-    console.log('  npx visual-browser-agent mcp');
-  }
+  console.log(chalk.bold('Quick start:'));
+  console.log('  npx visual-browser-agent mcp          # Uses Chromium');
+  console.log('  npx visual-browser-agent mcp --profile "Default"  # Uses Chrome');
 }

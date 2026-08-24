@@ -35,58 +35,52 @@ program
 // Connect command
 program
   .command('connect')
-  .description('Launch Chrome with a profile and connect')
-  .option('--profile <name>', 'Chrome profile name (Default, Profile 1, etc.)')
+  .description('Connect to a browser')
+  .option('--profile <name>', 'Chrome profile (optional, uses Chromium if not specified)')
   .option('--port <port>', 'Debug port (default: 9222)')
   .option('--url <url>', 'URL to open')
   .action(async (options) => {
     const { isChromeInstalled, launchChromeWithProfile, listProfiles, connectToRunningChrome } = await import('../cli/profiles.js');
-
-    if (!isChromeInstalled()) {
-      console.log(chalk.red('Chrome not found.'));
-      console.log('Install Chrome or use: npx visual-browser-agent init --mode managed');
-      return;
-    }
+    const { chromium } = await import('playwright');
 
     const port = options.port ? parseInt(options.port) : 9222;
+
+    // If Chrome profile specified, use Chrome
+    if (options.profile) {
+      if (!isChromeInstalled()) {
+        console.log(chalk.red('Chrome not found. Cannot use --profile with Chromium.'));
+        console.log('Either install Chrome or omit --profile to use Chromium.');
+        return;
+      }
+
+      try {
+        await launchChromeWithProfile(options.profile, port, [options.url || 'about:blank']);
+        console.log(chalk.green('Connected to Chrome with profile "' + options.profile + '"'));
+        console.log('Add to MCP config: "env": { "VBA_CDP_PORT": "' + port + '" }');
+      } catch (err) {
+        console.error(chalk.red('Error: ' + (err instanceof Error ? err.message : String(err))));
+      }
+      return;
+    }
 
     // Check if Chrome is already running
     const running = await connectToRunningChrome(port);
     if (running) {
       console.log('Using existing Chrome on port ' + port);
-      console.log('\nAdd to your MCP config:');
-      console.log('  "env": { "VBA_CDP_PORT": "' + port + '" }');
       return;
     }
 
-    // If no profile specified, list profiles and ask
-    if (!options.profile) {
-      const profiles = await listProfiles();
-      if (profiles.length === 0) {
-        console.log(chalk.yellow('No Chrome profiles found.'));
-        return;
-      }
-      if (profiles.length === 1) {
-        options.profile = profiles[0]?.name || 'Default';
-        console.log('Using only profile: ' + options.profile);
-      } else {
-        console.log(chalk.bold('\nAvailable profiles:\n'));
-        profiles.forEach((p, i) => {
-          console.log('  ' + chalk.cyan(String(i + 1)) + ' ' + p.name + ' - ' + (p.displayName || p.name));
-        });
-        console.log('\nRun with: --profile "' + (profiles[0]?.name || 'Default') + '"');
-        return;
-      }
-    }
-
+    // Default: Use Chromium (Playwright)
+    console.log('Using Chromium (Playwright)...');
     try {
-      const url = options.url || 'about:blank';
-      await launchChromeWithProfile(options.profile, port, [url]);
-      console.log(chalk.green('\nConnected!'));
-      console.log('\nAdd to your MCP config:');
-      console.log('  "env": { "VBA_CDP_PORT": "' + port + '" }');
+      const browser = await chromium.launch({ headless: false });
+      const page = await browser.newPage();
+      await page.goto(options.url || 'https://example.com');
+      console.log(chalk.green('Chromium launched!'));
+      console.log('Browser is ready for your AI agent.');
     } catch (err) {
-      console.error(chalk.red('Error: ' + (err instanceof Error ? err.message : String(err))));
+      console.error(chalk.red('Failed to launch Chromium: ' + (err instanceof Error ? err.message : String(err))));
+      console.log('Run: npx playwright install chromium');
     }
   });
 
@@ -95,7 +89,7 @@ program
   .command('mcp')
   .description('Start MCP server')
   .option('--http <port>', 'HTTP port for Streamable HTTP transport')
-  .option('--profile <name>', 'Chrome profile (launches Chrome if not running)')
+  .option('--profile <name>', 'Chrome profile (optional, uses Chromium if not specified)')
   .option('--cdp-port <port>', 'Chrome debug port (default: 9222)')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
@@ -104,6 +98,7 @@ program
     let cdpPort = options.cdpPort ? parseInt(options.cdpPort) : 9222;
 
     if (options.profile) {
+      // Use Chrome with specific profile
       if (!isChromeInstalled()) {
         console.log(chalk.yellow('Chrome not found. Using Chromium...'));
         await startMCPServer(options.http ? parseInt(options.http) : undefined);
@@ -117,6 +112,7 @@ program
         process.exit(1);
       }
     } else {
+      // Check for running Chrome
       const existingPort = await getDebugPort();
       if (existingPort) {
         cdpPort = existingPort;

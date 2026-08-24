@@ -91,11 +91,22 @@ export async function printProfiles(): Promise<void> {
   }
 
   console.log(chalk.bold('\nChrome Profiles:\n'));
+
   for (const p of profiles) {
-    const last = p.lastUsed ? new Date(p.lastUsed).toLocaleDateString() : 'never';
-    const tag = p.isDefault ? chalk.green(' (default)') : '';
-    console.log(`  ${chalk.cyan(p.name)}${tag}  ${chalk.dim(p.displayName)}  ${chalk.dim(`last: ${last}`)}`);
+    const last = p.lastUsed ? new Date(p.lastUsed).toLocaleDateString() : 'never used';
+    const tag = p.isDefault ? chalk.green(' [default]') : '';
+    const name = p.displayName || 'no name';
+
+    // Show profile name + display name so user knows which is which
+    console.log('  ' + chalk.cyan(p.name) + tag);
+    console.log('    Name: ' + name);
+    console.log('    Last: ' + last);
+    console.log('');
   }
+
+  console.log(chalk.bold('Usage:'));
+  console.log('  Use the profile name (Default, Profile 2, etc.) with --profile flag');
+  console.log('  Example: npx visual-browser-agent mcp --profile "Profile 3"');
 }
 
 // ── Chrome Launch ─────────────────────────────────────────────────────────────
