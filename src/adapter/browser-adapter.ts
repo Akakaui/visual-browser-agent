@@ -355,6 +355,19 @@ export class BrowserAdapter extends EventEmitter {
     return selectorOrRef;
   }
 
+  async createRoleLocatorRef(options: { role: string; name?: string; exact?: boolean }): Promise<{ ref: string; role: string; name?: string; count: number }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const locator = this.getActivePage().getByRole(options.role as any, { name: options.name, exact: options.exact });
+    const count = await locator.count();
+    if (count === 0) throw new Error(`No accessible element matched role ${options.role}${options.name ? ` named ${options.name}` : ''}. Inspect the page and try a visible role/name.`);
+    const ref = `ref:${this.state.nextLocatorRef++}`;
+    const tagByRole: Record<string, string> = { button: 'button', link: 'a', textbox: 'input,textarea', checkbox: 'input[type="checkbox"]', radio: 'input[type="radio"]', heading: 'h1,h2,h3,h4,h5,h6' };
+    const tag = tagByRole[options.role] || `[role="${options.role}"]`;
+    const selector = options.name ? `${tag}:has-text("${options.name.replace(/\\"/g, '\\\\"')}")` : tag;
+    this.state.locatorRefs.set(ref, selector);
+    return { ref, role: options.role, name: options.name, count };
+  }
+
   async createLocatorRef(selector: string): Promise<{ ref: string; selector: string; count: number }> {
     if (!this.state) throw new Error('Browser not connected. Call connect() first.');
     const resolved = this.resolveSelector(selector);

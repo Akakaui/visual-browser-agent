@@ -301,6 +301,11 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
       },
       {
+        name: 'locator_by_role',
+        description: 'Create a stable locator reference from an accessible role and optional accessible name',
+        inputSchema: { type: 'object', properties: { role: { type: 'string' }, name: { type: 'string' }, exact: { type: 'boolean', default: false } }, required: ['role'] }
+      },
+      {
         name: 'locator_ref',
         description: 'Create a stable locator reference from a selector for later actions/assertions',
         inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
@@ -659,6 +664,10 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
 
         case 'is_visible': {
           return { content: [{ type: 'text', text: String(await browserAdapter.isVisible((args as any).selector)) }] };
+        }
+
+        case 'locator_by_role': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.createRoleLocatorRef(args as any), null, 2) }] };
         }
 
         case 'locator_ref': {
