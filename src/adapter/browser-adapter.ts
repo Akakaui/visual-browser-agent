@@ -432,6 +432,14 @@ export class BrowserAdapter extends EventEmitter {
     return null;
   }
 
+  async setViewportSize(width: number, height: number): Promise<void> {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+      throw new Error(`Invalid viewport size: ${width}x${height}`);
+    }
+    const page = this.getActivePage();
+    await page.setViewportSize({ width: Math.round(width), height: Math.round(height) });
+  }
+
   async click(options: ClickOptions): Promise<void> {
     const page = this.getActivePage();
     await page.click(options.selector, {
@@ -450,6 +458,44 @@ export class BrowserAdapter extends EventEmitter {
   async hover(options: { selector: string }): Promise<void> {
     const page = this.getActivePage();
     await page.hover(options.selector);
+  }
+
+  async press(options: { selector: string; key: string }): Promise<void> {
+    const page = this.getActivePage();
+    await page.press(options.selector, options.key);
+  }
+
+  async selectOption(options: { selector: string; value?: string; label?: string; index?: number }): Promise<void> {
+    const page = this.getActivePage();
+    const select = options.value !== undefined ? { value: options.value } : options.label !== undefined ? { label: options.label } : { index: options.index ?? 0 };
+    await page.selectOption(options.selector, select);
+  }
+
+  async check(options: { selector: string; checked?: boolean }): Promise<void> {
+    const page = this.getActivePage();
+    if (options.checked === false) await page.uncheck(options.selector);
+    else await page.check(options.selector);
+  }
+
+  async scroll(options: { selector?: string; x?: number; y?: number }): Promise<void> {
+    const page = this.getActivePage();
+    const x = Math.round(options.x || 0);
+    const y = Math.round(options.y || 0);
+    if (options.selector) {
+      await page.locator(options.selector).evaluate((element, offset) => element.scrollBy(offset.x, offset.y), { x, y });
+    } else {
+      await page.mouse.wheel(x, y);
+    }
+  }
+
+  async waitFor(options: { state?: 'load' | 'domcontentloaded' | 'networkidle'; timeout?: number; milliseconds?: number }): Promise<void> {
+    const page = this.getActivePage();
+    if (options.milliseconds !== undefined) {
+      const milliseconds = Math.min(Math.max(Math.round(options.milliseconds), 0), 30000);
+      await page.waitForTimeout(milliseconds);
+      return;
+    }
+    await page.waitForLoadState(options.state || 'domcontentloaded', { timeout: options.timeout || 30000 });
   }
 
   async fill(options: FillOptions): Promise<void> {

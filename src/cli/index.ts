@@ -72,23 +72,30 @@ program
   .command('mcp')
   .description('Start MCP server')
   .option('--http <port>', 'HTTP port for Streamable HTTP transport')
-  .option('--extension', 'Connect to Chrome via extension (instead of Chromium)')
+  .option('--extension', 'Connect to an existing Chrome session via extension/CDP')
+  .option('--profile <name>', 'Launch/connect to a named Chrome profile (for example: Default or Profile 3)')
   .option('--cdp-port <port>', 'Chrome debug port (default: 9222)')
+  .option('--managed', 'Do not auto-connect to CDP; let the agent call browser_connect with managed Chromium')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
-    const { getDebugPort } = await import('../cli/profiles.js');
+    const { getDebugPort, launchChromeWithProfile } = await import('../cli/profiles.js');
 
-    let cdpPort = options.cdpPort ? parseInt(options.cdpPort) : 9222;
+    let cdpPort: number | undefined = options.cdpPort ? parseInt(options.cdpPort) : undefined;
 
-    if (options.extension) {
-      // Extension mode: connect to running Chrome
+    if (options.profile) {
+      cdpPort = cdpPort || 9222;
+      await launchChromeWithProfile(options.profile, cdpPort);
+    } else if (options.extension) {
+      // Extension mode connects to an already-running Chrome session.
       const existingPort = await getDebugPort();
-      if (existingPort) {
-        cdpPort = existingPort;
-      }
+      if (existingPort) cdpPort = existingPort;
+    } else if (!options.managed) {
+      // Preserve the historical convenience behavior when a debug browser exists,
+      // while allowing explicit managed mode to avoid unintended CDP attachment.
+      cdpPort = cdpPort || await getDebugPort() || undefined;
     }
 
-    await startMCPServer(options.http ? parseInt(options.http) : undefined, { cdpPort });
+    await startMCPServer(options.http ? parseInt(options.http) : undefined, cdpPort ? { cdpPort } : undefined);
   });
 
 // Doctor command
@@ -124,7 +131,7 @@ program
 program
   .command('init')
   .description('Initialize project config and skills')
-  .option('--mode <mode>', 'Browser mode: chrome | managed', 'chrome')
+  .option('--mode <mode>', 'Browser mode: chrome | chromium', 'chromium')
   .action(async (options) => {
     const { initProject } = await import('../cli/init.js');
     await initProject(options.mode);

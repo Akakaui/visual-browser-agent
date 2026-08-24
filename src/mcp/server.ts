@@ -14,7 +14,7 @@ This server provides browser automation with visual evidence capture, human hand
 
 Tools are organized by risk level:
 - Read-only (auto-approved): browser_status, inspect_page, capture_screenshot, review_visual_evidence
-- Actions (host-controlled): browser_connect, navigate, click, fill, upload_file, download_file, record_interaction
+- Actions (host-controlled): browser_connect, navigate, click, fill, press, select_option, check, scroll, wait_for, upload_file, download_file, record_interaction
 - Workflows (policy-controlled): study_website, responsive_audit, animation_study
 - Human interaction (always available): ask_human, request_approval, submit_public_action, delete_artifacts
 
@@ -65,7 +65,7 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: {
           type: 'object',
           properties: {
-            mode: { type: 'string', enum: ['extension', 'managed', 'cdp'], default: 'extension' },
+            mode: { type: 'string', enum: ['extension', 'managed', 'cdp'], default: 'managed' },
             cdpEndpoint: { type: 'string' },
             extensionPort: { type: 'number', default: 9222 },
             profile: { type: 'string', default: 'default' },
@@ -169,6 +169,49 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
             clearFirst: { type: 'boolean', default: true }
           },
           required: ['selector', 'value']
+        }
+      },
+      {
+        name: 'press',
+        description: 'Press a keyboard key or key combination on an element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, key: { type: 'string' } },
+          required: ['selector', 'key']
+        }
+      },
+      {
+        name: 'select_option',
+        description: 'Select an option in a native select element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, value: { type: 'string' }, label: { type: 'string' }, index: { type: 'number' } },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'check',
+        description: 'Check or uncheck a checkbox or radio control',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, checked: { type: 'boolean', default: true } },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'scroll',
+        description: 'Scroll the page or a scrollable element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, x: { type: 'number', default: 0 }, y: { type: 'number', default: 500 } }
+        }
+      },
+      {
+        name: 'wait_for',
+        description: 'Wait for a page load state or a bounded duration',
+        inputSchema: {
+          type: 'object',
+          properties: { state: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }, timeout: { type: 'number' }, milliseconds: { type: 'number' } }
         }
       },
       {
@@ -299,7 +342,7 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
     try {
       switch (name) {
         case 'browser_status': {
-          const status = browserAdapter.getStatus();
+          const status = await browserAdapter.getStatus();
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
         }
 
@@ -344,6 +387,31 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
           return { content: [{ type: 'text', text: 'Filled successfully' }] };
         }
 
+        case 'press': {
+          await browserAdapter.press(args as any);
+          return { content: [{ type: 'text', text: 'Pressed successfully' }] };
+        }
+
+        case 'select_option': {
+          await browserAdapter.selectOption(args as any);
+          return { content: [{ type: 'text', text: 'Option selected successfully' }] };
+        }
+
+        case 'check': {
+          await browserAdapter.check(args as any);
+          return { content: [{ type: 'text', text: 'Checkbox state updated successfully' }] };
+        }
+
+        case 'scroll': {
+          await browserAdapter.scroll(args as any);
+          return { content: [{ type: 'text', text: 'Scrolled successfully' }] };
+        }
+
+        case 'wait_for': {
+          await browserAdapter.waitFor(args as any);
+          return { content: [{ type: 'text', text: 'Wait completed successfully' }] };
+        }
+
         case 'upload_file': {
           await browserAdapter.uploadFile(args as any);
           return { content: [{ type: 'text', text: 'Uploaded successfully' }] };
@@ -380,10 +448,11 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'submit_public_action': {
-          return { content: [{ type: 'text', text: 'Public action submitted (requires approval flow)' }] };
+          throw new Error('Public action blocked by default. Call request_approval first, then retry only with an approval record.');
         }
 
         case 'delete_artifacts': {
+          if (!(args as any)?.confirm) throw new Error('Artifact deletion requires confirm=true.');
           const { deleteArtifacts } = await import('../retention/manager.js');
           await deleteArtifacts((args as any)?.paths || []);
           return { content: [{ type: 'text', text: 'Artifacts deleted' }] };
@@ -431,6 +500,7 @@ async function studyWebsite(args: any): Promise<any> {
   const results: any = { url, viewports: [], pages: [] };
 
   for (const viewport of viewports) {
+    await browserAdapter.setViewportSize(viewport.width, viewport.height);
     await browserAdapter.navigate({ url, waitUntil: 'networkidle' });
     await browserAdapter.captureScreenshot({ action: `viewport-${viewport.name}`, requirement: `${viewport.name} layout` });
 
@@ -453,6 +523,7 @@ async function responsiveAudit(args: any): Promise<any> {
   const results: any = { url, viewports: [], issues: [] };
 
   for (const viewport of viewports) {
+    await browserAdapter.setViewportSize(viewport.width, viewport.height);
     await browserAdapter.navigate({ url, waitUntil: 'networkidle' });
     await browserAdapter.captureScreenshot({ action: `responsive-${viewport.name}`, requirement: `${viewport.name} breakpoint` });
 

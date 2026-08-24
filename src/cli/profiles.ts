@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { accessSync } from 'fs';
+import { homedir, platform } from 'os';
 import { join } from 'path';
 import { spawn, execSync } from 'child_process';
 import chalk from 'chalk';
@@ -12,25 +13,47 @@ export interface ChromeProfile {
   lastUsed?: number;
 }
 
-const CHROME_USER_DATA = join(
-  process.env['LOCALAPPDATA'] || '',
-  'Google', 'Chrome', 'User Data'
-);
+function getChromeUserDataDir(): string {
+  if (platform() === 'win32') {
+    return join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'Google', 'Chrome', 'User Data');
+  }
+  if (platform() === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+  }
+  return join(process.env['XDG_CONFIG_HOME'] || join(homedir(), '.config'), 'google-chrome');
+}
 
-const CHROME_PATHS = [
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  join(process.env['LOCALAPPDATA'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
-];
+function getChromePathCandidates(): string[] {
+  if (platform() === 'win32') {
+    return [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ];
+  }
+  if (platform() === 'darwin') {
+    return ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', join(homedir(), 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome')];
+  }
+  return ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+}
+
+const CHROME_USER_DATA = getChromeUserDataDir();
 
 // ── Chrome Detection ──────────────────────────────────────────────────────────
 
 export function getChromePath(): string | null {
-  for (const p of CHROME_PATHS) {
+  for (const p of getChromePathCandidates()) {
     try {
       accessSync(p);
       return p;
     } catch {}
+  }
+  if (platform() !== 'win32') {
+    for (const command of ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser']) {
+      try {
+        return execSync(`command -v ${command}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      } catch {}
+    }
   }
   return null;
 }
@@ -184,7 +207,10 @@ export async function connectToRunningChrome(port: number = 9222): Promise<boole
 async function killChromeOnPort(port: number): Promise<void> {
   try {
     // Find processes using the port
-    const output = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, {
+    const command = platform() === 'win32'
+      ? `netstat -ano | findstr :${port} | findstr LISTENING`
+      : `lsof -ti tcp:${port} -sTCP:LISTEN || true`;
+    const output = execSync(command, {
       encoding: 'utf-8',
       timeout: 5000
     }).trim();
@@ -192,10 +218,11 @@ async function killChromeOnPort(port: number): Promise<void> {
     if (!output) return;
 
     // Extract PIDs and kill them
-    const pids = [...new Set(output.split('\n').map(line => line.trim().split(/\s+/).pop()).filter(Boolean))];
+    const pids = [...new Set(output.split('\n').map(line => platform() === 'win32' ? line.trim().split(/\s+/).pop() : line.trim()).filter(Boolean))];
     for (const pid of pids) {
       try {
-        execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: 'ignore' });
+        if (platform() === 'win32') execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: 'ignore' });
+        else execSync(`kill ${pid}`, { timeout: 5000, stdio: 'ignore' });
       } catch {}
     }
 
