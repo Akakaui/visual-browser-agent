@@ -73,18 +73,20 @@ program
   .description('Start MCP server')
   .option('--http <port>', 'HTTP port for Streamable HTTP transport')
   .option('--extension', 'Connect to an existing Chrome session via extension/CDP')
-  .option('--profile <name>', 'Launch/connect to a named Chrome profile (for example: Default or Profile 3)')
+  .option('--profile <name>', 'Launch/connect to a named Chrome profile or account email')
+  .option('--choose-profile', 'Show a friendly signed-in Chrome account chooser')
   .option('--cdp-port <port>', 'Chrome debug port (default: 9222)')
   .option('--managed', 'Do not auto-connect to CDP; let the agent call browser_connect with managed Chromium')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
-    const { getDebugPort, launchChromeWithProfile } = await import('../cli/profiles.js');
+    const { getDebugPort, launchChromeWithProfile, chooseChromeProfile } = await import('../cli/profiles.js');
 
     let cdpPort: number | undefined = options.cdpPort ? parseInt(options.cdpPort) : undefined;
+    const selectedProfile = options.profile || (options.chooseProfile ? await chooseChromeProfile() : undefined);
 
-    if (options.profile) {
+    if (selectedProfile) {
       cdpPort = cdpPort || 9222;
-      await launchChromeWithProfile(options.profile, cdpPort);
+      await launchChromeWithProfile(selectedProfile, cdpPort);
     } else if (options.extension) {
       // Extension mode connects to an already-running Chrome session.
       const existingPort = await getDebugPort();

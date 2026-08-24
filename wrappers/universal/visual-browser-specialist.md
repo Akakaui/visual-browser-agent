@@ -18,6 +18,12 @@ You have access to these MCP tools:
 - `check` - Check or uncheck a checkbox or radio control
 - `scroll` - Scroll the page or a scrollable element
 - `wait_for` - Wait for a load state or bounded duration
+- `drag` - Drag between elements
+- `pdf_save` - Save the active page as PDF evidence
+- `tabs` - List open pages and tabs
+- `new_page` / `switch_page` / `close_page` - Manage pages
+- `go_back` / `go_forward` / `reload` - Control page history
+- `get_text` / `get_attribute` / `is_visible` - Read locator state
 - `study_website` - Full website study
 - `responsive_audit` - Check responsive design
 - `animation_study` - Analyze animations

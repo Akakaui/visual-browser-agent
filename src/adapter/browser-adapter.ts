@@ -233,6 +233,67 @@ export class BrowserAdapter extends EventEmitter {
     };
   }
 
+  async listPages(): Promise<Array<{ index: number; url: string; title: string }>> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const pages = this.state.context.pages();
+    return Promise.all(pages.map(async (page, index) => ({ index, url: page.url(), title: await page.title().catch(() => '') })));
+  }
+
+  async newPage(url?: string): Promise<{ index: number; url: string; title: string }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const page = await this.state.context.newPage();
+    await this.setupPageListeners(page);
+    this.state.defaultPage = page;
+    if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const pages = this.state.context.pages();
+    return { index: pages.indexOf(page), url: page.url(), title: await page.title().catch(() => '') };
+  }
+
+  async switchPage(index: number): Promise<{ index: number; url: string; title: string }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const page = this.state.context.pages()[index];
+    if (!page) throw new Error(`Page index ${index} not found.`);
+    this.state.defaultPage = page;
+    return { index, url: page.url(), title: await page.title().catch(() => '') };
+  }
+
+  async closePage(index?: number): Promise<void> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const pages = this.state.context.pages();
+    const page = pages[index ?? pages.indexOf(this.state.defaultPage)];
+    if (!page) throw new Error(`Page index ${index ?? -1} not found.`);
+    await page.close();
+    const remaining = this.state.context.pages();
+    if (remaining.length > 0) this.state.defaultPage = remaining[Math.min(index ?? 0, remaining.length - 1)]!;
+  }
+
+  async goBack(): Promise<PageSnapshot> {
+    await this.getActivePage().goBack({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async goForward(): Promise<PageSnapshot> {
+    await this.getActivePage().goForward({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async reload(): Promise<PageSnapshot> {
+    await this.getActivePage().reload({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async getText(selector: string): Promise<string> {
+    return (await this.getActivePage().locator(selector).innerText()).trim();
+  }
+
+  async getAttribute(selector: string, name: string): Promise<string | null> {
+    return this.getActivePage().locator(selector).getAttribute(name);
+  }
+
+  async isVisible(selector: string): Promise<boolean> {
+    return this.getActivePage().locator(selector).isVisible();
+  }
+
   async navigate(options: NavigateOptions): Promise<PageSnapshot> {
     const page = this.getActivePage();
     const startTime = Date.now();
@@ -430,6 +491,19 @@ export class BrowserAdapter extends EventEmitter {
 
     this.state.recordingPage = undefined;
     return null;
+  }
+
+  async drag(source: string, target: string): Promise<void> {
+    await this.getActivePage().dragAndDrop(source, target);
+  }
+
+  async savePdf(filename = `page-${Date.now()}.pdf`): Promise<string> {
+    const page = this.getActivePage();
+    const config = configManager.getConfig();
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filepath = join(config.browser.approvedDirectories.downloads, safeFilename);
+    await page.pdf({ path: filepath, format: 'A4', printBackground: true });
+    return filepath;
   }
 
   async setViewportSize(width: number, height: number): Promise<void> {

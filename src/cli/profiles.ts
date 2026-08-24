@@ -9,6 +9,7 @@ export interface ChromeProfile {
   name: string;
   directory: string;
   displayName?: string;
+  accountEmail?: string;
   isDefault: boolean;
   lastUsed?: number;
 }
@@ -66,6 +67,12 @@ export function isChromeInstalled(): boolean {
 
 export async function listProfiles(): Promise<ChromeProfile[]> {
   const profiles: ChromeProfile[] = [];
+  let profileInfoCache: Record<string, { name?: string; user_name?: string; gaia_name?: string }> = {};
+
+  try {
+    const localState = JSON.parse(await readFile(join(CHROME_USER_DATA, 'Local State'), 'utf-8'));
+    profileInfoCache = localState?.profile?.info_cache || {};
+  } catch {}
 
   try {
     const entries = await readdir(CHROME_USER_DATA);
@@ -78,11 +85,17 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
       if (!s.isDirectory()) continue;
 
       let displayName: string | undefined;
+      let accountEmail: string | undefined;
       let lastUsed: number | undefined;
+      const cachedInfo = profileInfoCache[entry];
+      displayName = cachedInfo?.name;
+      accountEmail = cachedInfo?.user_name || cachedInfo?.gaia_name;
 
       try {
         const prefs = JSON.parse(await readFile(join(profilePath, 'Preferences'), 'utf-8'));
-        displayName = prefs?.profile?.name;
+        displayName = prefs?.profile?.name || displayName;
+        const accountInfo = prefs?.account_info?.[0];
+        accountEmail = (typeof accountInfo?.email === 'string' ? accountInfo.email : undefined) || accountEmail;
         lastUsed = prefs?.profile?.last_used ? Number(prefs.profile.last_used) : undefined;
       } catch {}
 
@@ -90,6 +103,7 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
         name: entry,
         directory: profilePath,
         displayName: displayName || (entry === 'Default' ? 'Default' : entry),
+        accountEmail,
         isDefault: entry === 'Default',
         lastUsed
       });
@@ -103,6 +117,34 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
   });
 
   return profiles;
+}
+
+export async function chooseChromeProfile(): Promise<string | null> {
+  const profiles = await listProfiles();
+  if (profiles.length === 0) {
+    throw new Error('No Chrome profiles found. Open Chrome once and sign in to a profile, then try again.');
+  }
+
+  console.log(chalk.bold('\nChoose the Chrome account to use:\n'));
+  profiles.forEach((profile, index) => {
+    const identity = profile.accountEmail || profile.displayName || profile.name;
+    const suffix = profile.displayName && profile.accountEmail ? ` — ${profile.displayName}` : '';
+    console.log(`  ${index + 1}. ${identity}${suffix}`);
+  });
+
+  const readline = await import('readline/promises');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question('\nEnter a number (or type the account/profile name): ')).trim();
+    const index = Number(answer) - 1;
+    if (Number.isInteger(index) && profiles[index]) return profiles[index].name;
+    const normalized = answer.toLowerCase();
+    const match = profiles.find(profile => [profile.name, profile.displayName, profile.accountEmail].filter(Boolean).some(value => value!.toLowerCase() === normalized));
+    if (match) return match.name;
+    throw new Error('Profile choice not recognized. Run "visual-browser-agent profiles" to see available identities.');
+  } finally {
+    rl.close();
+  }
 }
 
 export async function printProfiles(): Promise<void> {
@@ -123,6 +165,7 @@ export async function printProfiles(): Promise<void> {
     // Show profile name + display name so user knows which is which
     console.log('  ' + chalk.cyan(p.name) + tag);
     console.log('    Name: ' + name);
+    if (p.accountEmail) console.log('    Account: ' + p.accountEmail);
     console.log('    Last: ' + last);
     console.log('');
   }
@@ -154,7 +197,8 @@ export async function launchChromeWithProfile(
 
   // Validate profile
   const profiles = await listProfiles();
-  const profile = profiles.find(p => p.name === profileName);
+  const requested = profileName.toLowerCase();
+  const profile = profiles.find(p => [p.name, p.displayName, p.accountEmail].filter(Boolean).some(value => value!.toLowerCase() === requested));
   if (!profile) {
     throw new Error(
       `Profile "${profileName}" not found.\n` +

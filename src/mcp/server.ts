@@ -14,7 +14,8 @@ This server provides browser automation with visual evidence capture, human hand
 
 Tools are organized by risk level:
 - Read-only (auto-approved): browser_status, inspect_page, capture_screenshot, review_visual_evidence
-- Actions (host-controlled): browser_connect, navigate, click, fill, press, select_option, check, scroll, wait_for, upload_file, download_file, record_interaction
+- Actions (host-controlled): browser_connect, navigate, click, fill, press, select_option, check, scroll, wait_for, drag, upload_file, download_file, record_interaction, pdf_save
+- Page and locator controls: tabs, new_page, switch_page, close_page, go_back, go_forward, reload, get_text, get_attribute, is_visible
 - Workflows (policy-controlled): study_website, responsive_audit, animation_study
 - Human interaction (always available): ask_human, request_approval, submit_public_action, delete_artifacts
 
@@ -215,6 +216,66 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
       },
       {
+        name: 'drag',
+        description: 'Drag an element to another element',
+        inputSchema: { type: 'object', properties: { source: { type: 'string' }, target: { type: 'string' } }, required: ['source', 'target'] }
+      },
+      {
+        name: 'pdf_save',
+        description: 'Save the active page as a PDF in the approved downloads directory',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'tabs',
+        description: 'List open pages/tabs and their URLs and titles',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'new_page',
+        description: 'Open a new page and optionally navigate to a URL',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' } } }
+      },
+      {
+        name: 'switch_page',
+        description: 'Switch the active page by its tab index',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } }, required: ['index'] }
+      },
+      {
+        name: 'close_page',
+        description: 'Close a page by tab index, defaulting to the active page',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } } }
+      },
+      {
+        name: 'go_back',
+        description: 'Navigate the active page back in history',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'go_forward',
+        description: 'Navigate the active page forward in history',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'reload',
+        description: 'Reload the active page',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'get_text',
+        description: 'Read visible text from a selector',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
+        name: 'get_attribute',
+        description: 'Read an attribute from a selector',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' }, name: { type: 'string' } }, required: ['selector', 'name'] }
+      },
+      {
+        name: 'is_visible',
+        description: 'Check whether a selector is visible',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
         name: 'upload_file',
         description: 'Upload file(s) to input element',
         inputSchema: {
@@ -410,6 +471,58 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         case 'wait_for': {
           await browserAdapter.waitFor(args as any);
           return { content: [{ type: 'text', text: 'Wait completed successfully' }] };
+        }
+
+        case 'drag': {
+          await browserAdapter.drag((args as any).source, (args as any).target);
+          return { content: [{ type: 'text', text: 'Dragged successfully' }] };
+        }
+
+        case 'pdf_save': {
+          const path = await browserAdapter.savePdf((args as any)?.filename);
+          return { content: [{ type: 'text', text: `PDF saved to: ${path}` }] };
+        }
+
+        case 'tabs': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.listPages(), null, 2) }] };
+        }
+
+        case 'new_page': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.newPage((args as any)?.url), null, 2) }] };
+        }
+
+        case 'switch_page': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.switchPage((args as any).index), null, 2) }] };
+        }
+
+        case 'close_page': {
+          await browserAdapter.closePage((args as any)?.index);
+          return { content: [{ type: 'text', text: 'Page closed successfully' }] };
+        }
+
+        case 'go_back': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.goBack(), null, 2) }] };
+        }
+
+        case 'go_forward': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.goForward(), null, 2) }] };
+        }
+
+        case 'reload': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.reload(), null, 2) }] };
+        }
+
+        case 'get_text': {
+          return { content: [{ type: 'text', text: await browserAdapter.getText((args as any).selector) }] };
+        }
+
+        case 'get_attribute': {
+          const value = await browserAdapter.getAttribute((args as any).selector, (args as any).name);
+          return { content: [{ type: 'text', text: value ?? '' }] };
+        }
+
+        case 'is_visible': {
+          return { content: [{ type: 'text', text: String(await browserAdapter.isVisible((args as any).selector)) }] };
         }
 
         case 'upload_file': {

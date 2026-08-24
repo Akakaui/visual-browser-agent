@@ -233,12 +233,12 @@ npx visual-browser-agent mcp --extension
 
 ### Scenario 3: User specifies browser
 
-User says: "Use my Chrome with Profile 3"
+User says: "Use my signed-in Work Chrome account"
 
 Agent does:
 
 ```bash
-npx visual-browser-agent mcp --extension --profile "Profile 3"
+npx visual-browser-agent mcp --choose-profile
 ```
 
 ---
@@ -259,14 +259,14 @@ npx visual-browser-agent mcp --extension --profile "Profile 3"
 
 ## Profiles
 
-If you have multiple Chrome profiles, you can specify which one to use with the extension:
+If you have multiple Chrome profiles, choose the signed-in account you want to use with the extension:
 
 ```bash
-# See your profiles
-npx visual-browser-agent profiles
+# Choose an account interactively
+npx visual-browser-agent mcp --choose-profile
 
-# Use specific profile with extension
-npx visual-browser-agent mcp --extension --profile "Work"
+# Advanced: use a known technical profile name
+npx visual-browser-agent mcp --profile "Profile 3"
 ```
 
 ---
@@ -330,7 +330,7 @@ Visual Browser Agent can be used in two simple modes:
 | Mode | Best for | What the user does |
 |---|---|---|
 | Chromium | Public websites, research, visual QA, and tasks that do not need personal logins | Start the coding agent with `visual-browser-agent mcp --managed`; the agent connects to a clean Playwright Chromium session. |
-| Existing Chrome | Gmail, social accounts, internal tools, and websites where the user is already signed in | Install the extension in the Chrome profile, start `visual-browser-agent mcp --extension --profile "Profile 3"`, and ask the coding agent to use the connected browser. |
+| Existing Chrome | Gmail, social accounts, internal tools, and websites where the user is already signed in | Install the extension in the Chrome profile, start `visual-browser-agent mcp --choose-profile`, choose the signed-in account from the displayed list, and ask the coding agent to use the connected browser. |
 
 A non-technical user should not need to understand MCP. After one setup, they can tell their coding agent what they want in ordinary language, for example: “Open the Work Chrome profile, inspect the checkout page at this URL, and save screenshots,” or “Use a clean Chromium session to compare this website on desktop and mobile.” The wrapper instructs the coding agent to check the browser connection, choose the appropriate mode, ask before authentication or consequential actions, and return concise findings with evidence.
 
@@ -338,7 +338,7 @@ A non-technical user should not need to understand MCP. After one setup, they ca
 
 Chrome extensions are installed **per Chrome profile**, not once for every browser window. If a person wants to use three separate Chrome profiles through extension mode, they should open each profile, go to `chrome://extensions/`, enable Developer mode, and load the unpacked `browser-extension/` directory once in each profile. The same extension source can be loaded into every profile, but each profile must grant its own permissions and remain open when that profile is selected.
 
-Remote debugging is different. It connects to a Chrome instance launched with a specific `--profile-directory` and debugging port. Use `visual-browser-agent profiles` to see the profile names, then run `visual-browser-agent mcp --profile "Profile 3"`. This starts Chrome with that profile and connects the MCP server to it. A profile already in use by another Chrome process may refuse a second launch; close that profile first or use a separate debugging profile and port.
+Remote debugging is different. It connects to a Chrome instance launched with a specific `--profile-directory` and debugging port. Most people should run `visual-browser-agent mcp --choose-profile`; the tool reads friendly account labels from Chrome and lets the user select one by number. The technical `--profile` option remains available for scripts and advanced setups. A profile already in use by another Chrome process may refuse a second launch; close that profile first or use a separate debugging profile and port.
 
 For a user who needs existing login cookies, the extension route is usually the simplest. For a user who wants a repeatable clean browser, Chromium is safer. Remote debugging should be treated as an advanced option because it exposes the selected browser session to the local agent process.
 
@@ -351,7 +351,7 @@ Use a clean Chromium browser. Audit this public website at desktop and mobile wi
 ```
 
 ```text
-Use my Chrome profile named Profile 3. Open the internal dashboard, inspect the layout, and ask me before making any changes.
+Use the Work account I choose from Chrome. Open the internal dashboard, inspect the layout, and ask me before making any changes.
 ```
 
 ```text
@@ -369,6 +369,6 @@ npx visual-browser-agent init --mode chromium
 npx visual-browser-agent host <your-coding-agent>
 ```
 
-Then restart the coding agent and ask it to use the visual browser tools. For a clean daily Chromium workflow, use `visual-browser-agent mcp --managed`. For an existing Chrome profile, use `visual-browser-agent mcp --extension --profile "Profile 3"` after loading the extension into that profile.
+Then restart the coding agent and ask it to use the visual browser tools. For a clean daily Chromium workflow, use `visual-browser-agent mcp --managed`. For an existing Chrome identity, use `visual-browser-agent mcp --choose-profile` after loading the extension into the desired profile. Use `--profile` only for advanced scripts.
 
 The agent should always use read-only inspection and screenshots automatically when reviewing a website. It should request explicit approval before posting, publishing, purchasing, deleting, submitting, or changing external data. Authentication and private personal information should be supplied by the user directly in the browser, not placed in prompts or configuration files.
