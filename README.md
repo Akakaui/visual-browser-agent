@@ -141,6 +141,8 @@ The agent will use the Visual Browser Agent to control the browser.
 
 ## Using Your Existing Chrome (Extension)
 
+For the complete normal-user walkthrough with profile switching, verification, and troubleshooting, see [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md).
+
 If you need your agent to use your existing Chrome (with your logins, cookies, sessions):
 
 ### 1. Install the extension
