@@ -257,6 +257,12 @@ npx visual-browser-agent mcp --choose-profile
 
 ---
 
+## Playwright 2.0 compatibility surface
+
+Visual Browser Agent exposes a Playwright-backed MCP surface for agent workflows. In addition to navigation, forms, uploads, downloads, screenshots, recording, responsive audits, and visual studies, agents can use tabs/pages, history, drag-and-drop, locator references, web-first assertions, frame inspection, dialog policy, cookies, approved storage-state export, recent console messages, recent network requests, URL routing mocks, tracing, media emulation, PDF evidence, and confirmation-gated page evaluation.
+
+The compatibility layer intentionally keeps sensitive operations explicit. Clearing cookies requires `confirm=true`; page evaluation requires `confirmDangerous=true`; public submissions and artifact deletion remain governed by the approval service. Network mocks and storage artifacts are restricted to the active agent session and approved directories.
+
 ## Profiles
 
 If you have multiple Chrome profiles, choose the signed-in account you want to use with the extension:

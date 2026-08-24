@@ -24,6 +24,15 @@ You have access to these MCP tools:
 - `new_page` / `switch_page` / `close_page` - Manage pages
 - `go_back` / `go_forward` / `reload` - Control page history
 - `get_text` / `get_attribute` / `is_visible` - Read locator state
+- `locator_ref` / `assert` - Create stable refs and run web-first assertions
+- `frames` / `inspect_frame` - Inspect child frames
+- `handle_dialog` - Configure the next dialog response
+- `cookies` / `cookies_clear` / `storage_state_save` - Manage session evidence with confirmation for destructive actions
+- `network_requests` / `network_route` / `network_unroute` - Inspect and mock requests
+- `console_messages` - Read console and page errors
+- `trace_start` / `trace_stop` - Capture Playwright traces
+- `emulate_media` - Emulate print and color scheme
+- `evaluate` - Run trusted page JavaScript only with explicit confirmation
 - `study_website` - Full website study
 - `responsive_audit` - Check responsive design
 - `animation_study` - Analyze animations

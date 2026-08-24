@@ -276,6 +276,86 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
       },
       {
+        name: 'locator_ref',
+        description: 'Create a stable locator reference from a selector for later actions/assertions',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
+        name: 'assert',
+        description: 'Run a Playwright-style web-first locator assertion',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' }, assertion: { type: 'string', enum: ['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked', 'text', 'count'] }, expected: { type: ['string', 'number'] } }, required: ['selector', 'assertion'] }
+      },
+      {
+        name: 'frames',
+        description: 'List frames in the active page',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'inspect_frame',
+        description: 'Inspect a frame by index',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } }, required: ['index'] }
+      },
+      {
+        name: 'handle_dialog',
+        description: 'Configure the next page dialog to be accepted or dismissed',
+        inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['accept', 'dismiss'] }, promptText: { type: 'string' } }, required: ['action'] }
+      },
+      {
+        name: 'cookies',
+        description: 'List cookies for the active browser context',
+        inputSchema: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' } } } }
+      },
+      {
+        name: 'cookies_clear',
+        description: 'Clear all cookies in the active browser context',
+        inputSchema: { type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'] }
+      },
+      {
+        name: 'storage_state_save',
+        description: 'Save cookies and local storage to an approved artifact path',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'network_requests',
+        description: 'List recent requests observed in the active session',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'network_route',
+        description: 'Mock matching requests with a controlled response',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' }, status: { type: 'number' }, contentType: { type: 'string' }, body: { type: 'string' } }, required: ['url'] }
+      },
+      {
+        name: 'network_unroute',
+        description: 'Remove a request mock',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] }
+      },
+      {
+        name: 'console_messages',
+        description: 'List recent console and page-error messages',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'trace_start',
+        description: 'Start a Playwright trace with screenshots and DOM snapshots',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'trace_stop',
+        description: 'Stop tracing and save the trace to approved artifacts',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'emulate_media',
+        description: 'Emulate print/screen media and color scheme',
+        inputSchema: { type: 'object', properties: { media: { type: 'string', enum: ['screen', 'print'] }, colorScheme: { type: 'string', enum: ['light', 'dark', 'no-preference'] } } }
+      },
+      {
+        name: 'evaluate',
+        description: 'Evaluate trusted JavaScript on the active page; blocked unless explicitly confirmed',
+        inputSchema: { type: 'object', properties: { expression: { type: 'string' }, confirmDangerous: { type: 'boolean', default: false } }, required: ['expression'] }
+      },
+      {
         name: 'upload_file',
         description: 'Upload file(s) to input element',
         inputSchema: {
@@ -523,6 +603,78 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
 
         case 'is_visible': {
           return { content: [{ type: 'text', text: String(await browserAdapter.isVisible((args as any).selector)) }] };
+        }
+
+        case 'locator_ref': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.createLocatorRef((args as any).selector), null, 2) }] };
+        }
+
+        case 'assert': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.assertLocator(args as any), null, 2) }] };
+        }
+
+        case 'frames': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.listFrames(), null, 2) }] };
+        }
+
+        case 'inspect_frame': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.inspectFrame((args as any).index), null, 2) }] };
+        }
+
+        case 'handle_dialog': {
+          await browserAdapter.setDialogAction((args as any).action, (args as any).promptText);
+          return { content: [{ type: 'text', text: 'Dialog policy configured' }] };
+        }
+
+        case 'cookies': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getCookies((args as any)?.urls), null, 2) }] };
+        }
+
+        case 'cookies_clear': {
+          if (!(args as any)?.confirm) throw new Error('Cookie clearing requires confirm=true.');
+          await browserAdapter.clearCookies();
+          return { content: [{ type: 'text', text: 'Cookies cleared' }] };
+        }
+
+        case 'storage_state_save': {
+          return { content: [{ type: 'text', text: `Storage state saved to: ${await browserAdapter.saveStorageState((args as any)?.filename)}` }] };
+        }
+
+        case 'network_requests': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getNetworkRequests(), null, 2) }] };
+        }
+
+        case 'network_route': {
+          await browserAdapter.routeMock(args as any);
+          return { content: [{ type: 'text', text: 'Network route configured' }] };
+        }
+
+        case 'network_unroute': {
+          await browserAdapter.unrouteMock((args as any).url);
+          return { content: [{ type: 'text', text: 'Network route removed' }] };
+        }
+
+        case 'console_messages': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getConsoleMessages(), null, 2) }] };
+        }
+
+        case 'trace_start': {
+          await browserAdapter.startTracing();
+          return { content: [{ type: 'text', text: 'Tracing started' }] };
+        }
+
+        case 'trace_stop': {
+          return { content: [{ type: 'text', text: `Trace saved to: ${await browserAdapter.stopTracing((args as any)?.filename)}` }] };
+        }
+
+        case 'emulate_media': {
+          await browserAdapter.emulateMedia(args as any);
+          return { content: [{ type: 'text', text: 'Media emulation applied' }] };
+        }
+
+        case 'evaluate': {
+          const result = await browserAdapter.runPageEvaluation((args as any).expression, Boolean((args as any).confirmDangerous));
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
         case 'upload_file': {
