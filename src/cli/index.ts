@@ -20,13 +20,12 @@ program
 // Profiles command
 program
   .command('profiles')
-  .description('List Chrome profiles on this machine')
+  .description('List Chrome profiles (for extension mode)')
   .action(async () => {
     const { printProfiles, isChromeInstalled } = await import('../cli/profiles.js');
     if (!isChromeInstalled()) {
-      console.log(chalk.yellow('Chrome not found. Install Chrome or use Chromium mode.'));
-      console.log('  npm install playwright');
-      console.log('  npx visual-browser-agent init --mode managed');
+      console.log('Chrome not found. Profiles are only available for Chrome extension mode.');
+      console.log('For Chromium (default), no profiles are needed.');
       return;
     }
     await printProfiles();
@@ -36,50 +35,34 @@ program
 program
   .command('connect')
   .description('Connect to a browser')
-  .option('--profile <name>', 'Chrome profile (optional, uses Chromium if not specified)')
-  .option('--port <port>', 'Debug port (default: 9222)')
+  .option('--extension', 'Connect to Chrome via extension (instead of Chromium)')
   .option('--url <url>', 'URL to open')
   .action(async (options) => {
-    const { isChromeInstalled, launchChromeWithProfile, listProfiles, connectToRunningChrome } = await import('../cli/profiles.js');
     const { chromium } = await import('playwright');
+    const { connectToRunningChrome } = await import('../cli/profiles.js');
 
-    const port = options.port ? parseInt(options.port) : 9222;
-
-    // If Chrome profile specified, use Chrome
-    if (options.profile) {
-      if (!isChromeInstalled()) {
-        console.log(chalk.red('Chrome not found. Cannot use --profile with Chromium.'));
-        console.log('Either install Chrome or omit --profile to use Chromium.');
-        return;
-      }
-
-      try {
-        await launchChromeWithProfile(options.profile, port, [options.url || 'about:blank']);
-        console.log(chalk.green('Connected to Chrome with profile "' + options.profile + '"'));
-        console.log('Add to MCP config: "env": { "VBA_CDP_PORT": "' + port + '" }');
-      } catch (err) {
-        console.error(chalk.red('Error: ' + (err instanceof Error ? err.message : String(err))));
+    if (options.extension) {
+      // Extension mode: connect to running Chrome
+      const running = await connectToRunningChrome(9222);
+      if (running) {
+        console.log('Connected to Chrome via extension');
+      } else {
+        console.log('Chrome not detected. Make sure Chrome is open with remote debugging enabled.');
+        console.log('Or install the Chrome extension from: browser-extension/');
       }
       return;
     }
 
-    // Check if Chrome is already running
-    const running = await connectToRunningChrome(port);
-    if (running) {
-      console.log('Using existing Chrome on port ' + port);
-      return;
-    }
-
-    // Default: Use Chromium (Playwright)
+    // Default: Use Chromium
     console.log('Using Chromium (Playwright)...');
     try {
       const browser = await chromium.launch({ headless: false });
       const page = await browser.newPage();
       await page.goto(options.url || 'https://example.com');
-      console.log(chalk.green('Chromium launched!'));
+      console.log('Chromium launched!');
       console.log('Browser is ready for your AI agent.');
     } catch (err) {
-      console.error(chalk.red('Failed to launch Chromium: ' + (err instanceof Error ? err.message : String(err))));
+      console.error('Failed to launch Chromium: ' + (err instanceof Error ? err.message : String(err)));
       console.log('Run: npx playwright install chromium');
     }
   });
@@ -89,30 +72,16 @@ program
   .command('mcp')
   .description('Start MCP server')
   .option('--http <port>', 'HTTP port for Streamable HTTP transport')
-  .option('--profile <name>', 'Chrome profile (optional, uses Chromium if not specified)')
+  .option('--extension', 'Connect to Chrome via extension (instead of Chromium)')
   .option('--cdp-port <port>', 'Chrome debug port (default: 9222)')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
-    const { isChromeInstalled, launchChromeWithProfile, getDebugPort } = await import('../cli/profiles.js');
+    const { getDebugPort } = await import('../cli/profiles.js');
 
     let cdpPort = options.cdpPort ? parseInt(options.cdpPort) : 9222;
 
-    if (options.profile) {
-      // Use Chrome with specific profile
-      if (!isChromeInstalled()) {
-        console.log(chalk.yellow('Chrome not found. Using Chromium...'));
-        await startMCPServer(options.http ? parseInt(options.http) : undefined);
-        return;
-      }
-
-      try {
-        cdpPort = await launchChromeWithProfile(options.profile, cdpPort);
-      } catch (err) {
-        console.error(chalk.red('Failed: ' + (err instanceof Error ? err.message : String(err))));
-        process.exit(1);
-      }
-    } else {
-      // Check for running Chrome
+    if (options.extension) {
+      // Extension mode: connect to running Chrome
       const existingPort = await getDebugPort();
       if (existingPort) {
         cdpPort = existingPort;
@@ -128,24 +97,26 @@ program
   .description('Check environment')
   .action(async () => {
     const { isChromeInstalled, getChromePath, listProfiles, getDebugPort } = await import('../cli/profiles.js');
-    console.log(chalk.bold('\nEnvironment:\n'));
+    console.log('\nEnvironment:\n');
+
+    // Chromium
+    console.log('  Chromium: Available (via Playwright)');
 
     // Chrome
     if (isChromeInstalled()) {
-      console.log('  ' + chalk.green('OK') + ' Chrome: ' + getChromePath());
+      console.log('  Chrome: ' + getChromePath());
       const profiles = await listProfiles();
       console.log('    Profiles: ' + profiles.length);
-      profiles.forEach(p => console.log('      ' + p.name + ' - ' + p.displayName));
     } else {
-      console.log('  ' + chalk.yellow('--') + ' Chrome: not found (Chromium will be used)');
+      console.log('  Chrome: Not found (extension mode unavailable)');
     }
 
     // Running Chrome
     const runningPort = await getDebugPort();
     if (runningPort) {
-      console.log('  ' + chalk.green('OK') + ' Chrome running on port ' + runningPort);
+      console.log('  Chrome running: Yes (port ' + runningPort + ')');
     } else {
-      console.log('  ' + chalk.dim('--') + ' No Chrome running');
+      console.log('  Chrome running: No');
     }
   });
 
@@ -208,19 +179,16 @@ program
   .description('Launch browser directly (dev/testing)')
   .argument('[url]', 'URL to open', 'https://example.com')
   .action(async (url) => {
-    const { launchChromeWithProfile, isChromeInstalled, listProfiles } = await import('../cli/profiles.js');
-    const { BrowserAdapter } = await import('../adapter/browser-adapter.js');
+    const { chromium } = await import('playwright');
 
-    if (isChromeInstalled()) {
-      const profiles = await listProfiles();
-      const profile = profiles.length > 0 ? profiles[0]?.name || 'Default' : 'Default';
-      console.log('Launching Chrome with profile "' + profile + '"...');
-      await launchChromeWithProfile(profile, 9222, [url]);
-    } else {
-      console.log('Chrome not found, using Chromium...');
-      const adapter = new BrowserAdapter();
-      await adapter.connect({ mode: 'managed' });
-      await adapter.navigate(url);
+    console.log('Launching Chromium...');
+    try {
+      const browser = await chromium.launch({ headless: false });
+      const page = await browser.newPage();
+      await page.goto(url);
+      console.log('Chromium launched!');
+    } catch (err) {
+      console.error('Failed: ' + (err instanceof Error ? err.message : String(err)));
     }
   });
 
