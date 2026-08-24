@@ -162,14 +162,17 @@ program
 program
   .command('host')
   .description('Generate host integration configs')
-  .argument('[host]', 'Host name (claude-code, cursor, etc.)')
+  .argument('[host]', 'Host name (claude-code, cursor, antigravity, opencode, etc.)')
   .action(async (host) => {
     const { HostManager } = await import('../cli/host-manager.js');
     const manager = new HostManager();
     if (host) {
       await manager.install(host);
     } else {
-      console.log('Specify a host: claude-code, cursor, antigravity, etc.');
+      console.log('Supported agents:');
+      console.log('  claude-code, cursor, gemini, opencode, antigravity,');
+      console.log('  windsurf, cline, roo, kiro, copilot, codex, goose');
+      console.log('\nUsage: npx visual-browser-agent host <agent-name>');
     }
   });
 

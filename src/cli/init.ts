@@ -1,4 +1,4 @@
-import { writeFile, readFile } from 'fs/promises';
+import { writeFile, readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import chalk from 'chalk';
 import { isChromeInstalled, listProfiles } from './profiles.js';
@@ -30,6 +30,60 @@ const CONFIG_TEMPLATE = '# Visual Browser Agent Configuration\n' +
   'retention:\n' +
   '  maxAgeDays: 30\n' +
   '  maxRunHistorySize: 200\n';
+
+// Detect which coding agent is being used
+function detectAgent(): string | null {
+  const { existsSync } = require('fs');
+
+  // Check for common agent config directories
+  if (existsSync('.claude')) return 'claude-code';
+  if (existsSync('.cursor')) return 'cursor';
+  if (existsSync('.gemini')) return 'gemini';
+  if (existsSync('.opencode')) return 'opencode';
+  if (existsSync('.antigravity')) return 'antigravity';
+  if (existsSync('.windsurf')) return 'windsurf';
+  if (existsSync('.cline')) return 'cline';
+  if (existsSync('.roo')) return 'roo';
+  if (existsSync('.kiro')) return 'kiro';
+  if (existsSync('.copilot')) return 'copilot';
+  if (existsSync('.codex')) return 'codex';
+  if (existsSync('.goose')) return 'goose';
+
+  return null;
+}
+
+// Install universal wrapper for detected agent
+async function installUniversalWrapper(agent: string): Promise<void> {
+  const agentDirs: Record<string, string> = {
+    'claude-code': '.claude/agents',
+    'cursor': '.cursor/agents',
+    'gemini': '.gemini/agents',
+    'opencode': '.opencode/agents',
+    'antigravity': '.antigravity/agents',
+    'windsurf': '.windsurf/agents',
+    'cline': '.cline/agents',
+    'roo': '.roo/agents',
+    'kiro': '.kiro/agents',
+    'copilot': '.copilot/agents',
+    'codex': '.codex/agents',
+    'goose': '.goose/agents'
+  };
+
+  const agentDir = agentDirs[agent] || '.agents';
+  const destDir = join(process.cwd(), agentDir);
+  await mkdir(destDir, { recursive: true });
+
+  // Read universal wrapper
+  const wrapperPath = join(__dirname, '../../wrappers/universal/visual-browser-specialist.md');
+  try {
+    const template = await readFile(wrapperPath, 'utf-8');
+    const dest = join(destDir, 'visual-browser-specialist.md');
+    await writeFile(dest, template, 'utf-8');
+    console.log(chalk.green('Installed visual-browser-specialist for ' + agent));
+  } catch {
+    console.log(chalk.yellow('Could not install universal wrapper'));
+  }
+}
 
 export async function initProject(mode: string = 'chromium'): Promise<void> {
   console.log(chalk.bold('\nVisual Browser Agent - Init\n'));
@@ -66,9 +120,18 @@ export async function initProject(mode: string = 'chromium'): Promise<void> {
     if (profiles.length > 0) {
       console.log(chalk.bold('\nChrome Profiles:'));
       profiles.forEach(p => console.log('  ' + chalk.cyan(p.name) + ' - ' + (p.displayName || p.name)));
-      console.log('\nTo use Chrome with your profiles:');
-      console.log('  npx visual-browser-agent mcp --profile "Default"');
     }
+  }
+
+  // Detect and configure for coding agent
+  const agent = detectAgent();
+  if (agent) {
+    console.log(chalk.bold('\nDetected coding agent: ' + agent));
+    await installUniversalWrapper(agent);
+  } else {
+    console.log(chalk.dim('\nNo coding agent detected.'));
+    console.log('To install for your agent, run:');
+    console.log('  npx visual-browser-agent host <agent-name>');
   }
 
   // Install skills
@@ -79,5 +142,5 @@ export async function initProject(mode: string = 'chromium'): Promise<void> {
   console.log(chalk.bold('\nSetup complete!\n'));
   console.log(chalk.bold('Quick start:'));
   console.log('  npx visual-browser-agent mcp          # Uses Chromium');
-  console.log('  npx visual-browser-agent mcp --profile "Default"  # Uses Chrome');
+  console.log('  npx visual-browser-agent mcp --extension  # Uses Chrome');
 }

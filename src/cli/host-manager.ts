@@ -193,15 +193,26 @@ export class HostManager {
   }
 
   private getWrapperPath(host: string): string | null {
-    const wrapperTemplates: Record<string, string> = {
-      'claude-code': join('wrappers', 'claude-code', 'visual-browser-specialist.md'),
-      'cursor': join('wrappers', 'cursor', 'visual-browser-specialist.md'),
-      'gemini': join('wrappers', 'gemini', 'visual-browser-specialist.md')
-    };
+    // Use universal wrapper for all hosts
+    const universalWrapper = join('wrappers', 'universal', 'visual-browser-specialist.md');
+    const hostWrapper = join('wrappers', host, 'visual-browser-specialist.md');
 
-    const relativePath = wrapperTemplates[host];
-    if (!relativePath) return null;
-    return join(process.cwd(), relativePath);
+    // Check if host-specific wrapper exists, otherwise use universal
+    const hostSpecificPath = join(process.cwd(), hostWrapper);
+    try {
+      require('fs').accessSync(hostSpecificPath);
+      return hostSpecificPath;
+    } catch {
+      // Use universal wrapper
+    }
+
+    const universalPath = join(process.cwd(), universalWrapper);
+    try {
+      require('fs').accessSync(universalPath);
+      return universalPath;
+    } catch {
+      return null;
+    }
   }
 
   private async installWrapper(host: string): Promise<void> {
@@ -211,10 +222,20 @@ export class HostManager {
     const agentDirs: Record<string, string> = {
       'claude-code': '.claude/agents',
       'cursor': '.cursor/agents',
-      'gemini': '.gemini/agents'
+      'gemini': '.gemini/agents',
+      'opencode': '.opencode/agents',
+      'antigravity': '.antigravity/agents',
+      'windsurf': '.windsurf/agents',
+      'cline': '.cline/agents',
+      'roo': '.roo/agents',
+      'kiro': '.kiro/agents',
+      'copilot': '.copilot/agents',
+      'codex': '.codex/agents',
+      'goose': '.goose/agents'
     };
-    const agentDir = agentDirs[host];
-    if (!agentDir) return;
+    const agentDir = agentDirs[host] || '.agents';
+    const destDir = join(process.cwd(), agentDir);
+    await mkdir(destDir, { recursive: true });
 
     let template: string;
     try {
@@ -224,8 +245,6 @@ export class HostManager {
       return;
     }
 
-    const destDir = join(process.cwd(), agentDir);
-    await mkdir(destDir, { recursive: true });
     const dest = join(destDir, 'visual-browser-specialist.md');
     await writeFile(dest, template, 'utf-8');
     console.log(chalk.green(`  Subagent wrapper: ${dest}`));
