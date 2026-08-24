@@ -1,14 +1,12 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { readFile } from 'fs/promises';
-import { extname } from 'path';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   InitializeRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { browserAdapter } from '../adapter/browser-adapter.js';
-import { configManager } from '../config/index.js';
 
 const SERVER_INSTRUCTIONS = `Visual Browser Agent - Enhanced MCP Server
 
@@ -835,7 +833,7 @@ async function studyWebsite(args: any): Promise<any> {
   const runId = await browserAdapter.generateEventId();
   await browserAdapter.createRunContext(`Study website: ${url}`, ['Visual design', 'Interactions', 'Responsiveness', 'Motion']);
 
-  const results: any = { url, viewports: [], pages: [] };
+  const results: any = { url, runId, pageLimit: maxPages, viewports: [], pages: [] };
 
   for (const viewport of viewports) {
     await browserAdapter.setViewportSize(viewport.width, viewport.height);
@@ -858,7 +856,7 @@ async function studyWebsite(args: any): Promise<any> {
 async function responsiveAudit(args: any): Promise<any> {
   const { url, viewports = [{ width: 1280, height: 720, name: 'desktop' }, { width: 768, height: 1024, name: 'tablet' }, { width: 375, height: 667, name: 'mobile' }], checkpoints = ['navigation', 'hero', 'content', 'footer'] } = args;
 
-  const results: any = { url, viewports: [], issues: [] };
+  const results: any = { url, checkpoints, viewports: [], issues: [] };
 
   for (const viewport of viewports) {
     await browserAdapter.setViewportSize(viewport.width, viewport.height);
@@ -888,7 +886,7 @@ async function animationStudy(args: any): Promise<any> {
   }
 
   const recording = await browserAdapter.stopRecording();
-  return { url, recording, triggers: triggerActions };
+  return { url, recording, selectors, triggers: triggerActions };
 }
 
 async function askHuman(args: any): Promise<any> {
@@ -897,6 +895,7 @@ async function askHuman(args: any): Promise<any> {
   console.error(`\n❓ HUMAN INPUT REQUIRED (${runId})`);
   console.error(`Question: ${question}`);
   console.error(`Options: ${options.join(', ')}`);
+  if (sensitive) console.error('This question is marked sensitive; do not provide passwords, tokens, or payment credentials.');
   if (formSchema) console.error(`Form schema: ${JSON.stringify(formSchema)}`);
 
   const readline = await import('readline/promises');

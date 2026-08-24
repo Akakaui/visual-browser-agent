@@ -1,11 +1,7 @@
-import { readFile, writeFile, mkdir, stat } from 'fs/promises';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import * as yaml from 'yaml';
 import { VisualBrowserConfig, DEFAULT_CONFIG, ConfigPath } from './schema.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const CONFIG_PATHS = [
   './visual-browser-agent.yaml',

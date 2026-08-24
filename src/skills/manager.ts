@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readFile, readdir, stat, rm, cp } from 'fs/promises';
-import { join, dirname, resolve } from 'path';
+import { mkdir, readFile, readdir, stat, rm, cp } from 'fs/promises';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'yaml';
 import chalk from 'chalk';

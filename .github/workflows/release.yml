@@ -24,6 +24,6 @@ jobs:
       - name: Install
         run: npm ci
       - name: Quality gate
-        run: npm run lint && npm run build && npm test
+        run: npm run lint && npm run build && npm test && npm run test:mcp
       - name: Publish with provenance
         run: npm publish --access public --provenance

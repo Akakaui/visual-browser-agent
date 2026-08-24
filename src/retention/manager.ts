@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
+import { readFile, writeFile, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 import { configManager } from '../config/index.js';
 

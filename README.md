@@ -419,3 +419,20 @@ npx visual-browser-agent host <your-coding-agent>
 Then restart the coding agent and ask it to use the visual browser tools. For a clean daily Chromium workflow, use `visual-browser-agent mcp --managed`. For an existing Chrome identity, use `visual-browser-agent mcp --choose-profile` after loading the extension into the desired profile. Use `--profile` only for advanced scripts.
 
 The agent should always use read-only inspection and screenshots automatically when reviewing a website. It should request explicit approval before posting, publishing, purchasing, deleting, submitting, or changing external data. Authentication and private personal information should be supplied by the user directly in the browser, not placed in prompts or configuration files.
+
+
+## Agent artifacts, artifact panels, questions, and approvals
+
+For the complete normal-user and technical workflow, read [the Visual Browser Agent 1.0 User Guide](docs/user-guide-1.0.md). The short version is that a coding agent interacts with Visual Browser Agent through MCP: it discovers the available browser tools, selects the tools that match the user’s request, and receives text, structured JSON, screenshots, and evidence metadata.
+
+Visual Browser Agent is designed for both UI-based coding agents and CLI-based agents. A UI host such as Claude Code or Antigravity can place screenshot/image content and a generated HTML or Markdown evidence report in its artifact panel. A CLI host or a generic MCP client can use the same result through the embedded image block, structured metadata, local evidence path, or the local dashboard at `http://127.0.0.1:8787/`. The agent should never assume that a host can open an arbitrary sandbox path; it should return a portable result and a fallback.
+
+A good browser-agent result contains the task objective, URL and origin, selected browser identity, actions performed, assertions, screenshots, console/network findings, run ID, timestamp, and next step. This lets a person verify the work visually rather than reading raw tool logs. Ask your agent for this explicitly when needed:
+
+```text
+Create a host-renderable visual report with screenshots, assertions, console errors, and a concise conclusion. Also provide a local fallback.
+```
+
+There are three kinds of human interaction. A **question** resolves missing information, such as which Chrome identity or tab to use. A **human takeover** asks the user to operate the browser directly when a password, MFA prompt, CAPTCHA, or one-time code appears. An **approval** authorizes a consequential action such as sending, publishing, purchasing, deleting, or submitting. They are intentionally separate: a question is not permission to act, and a screenshot is not proof that a transaction succeeded.
+
+The fallback `ask_human` tool supports questions and simple structured choices. The `request_approval` and `submit_public_action` tools are reserved for explicit authorization. The agent should show the exact site, target, action, and relevant data before asking for approval, and should treat denial as a final user decision rather than silently retrying. Never paste passwords, API keys, access tokens, payment details, or one-time codes into the agent conversation. See [docs/user-guide-1.0.md](docs/user-guide-1.0.md) for the full safety model and [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) for per-profile Chrome extension setup.

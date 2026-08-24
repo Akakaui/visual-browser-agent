@@ -2,10 +2,7 @@ import { Browser, BrowserContext, Page, CDPSession, chromium } from 'playwright'
 import { EventEmitter } from 'events';
 import { join } from 'path';
 import { mkdir, readdir, stat, readFile } from 'fs/promises';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import {
-  BrowserInfo,
   PageSnapshot,
   ScreenshotResult,
   RecordingResult,
@@ -22,9 +19,6 @@ import {
   RunContext
 } from './types.js';
 import { configManager } from '../config/index.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 interface ManagedBrowserState {
   browser: Browser;
@@ -50,8 +44,6 @@ export class BrowserAdapter extends EventEmitter {
   private recordingStartedAt?: number;
 
   async connect(options: BrowserConnectOptions): Promise<BrowserStatus> {
-    const config = configManager.getConfig();
-
     switch (options.mode) {
       case 'auto':
         return this.connectAutomatically(options);
@@ -166,7 +158,7 @@ export class BrowserAdapter extends EventEmitter {
       this.setupBrowserListeners(browser);
 
       return this.getStatus();
-    } catch (error) {
+    } catch {
       throw new Error(`Failed to connect to Chrome extension on port ${port}. Ensure the extension is installed and "Allow access to file URLs" is enabled. Run with --extension-port if using a different port.`);
     }
   }
@@ -482,9 +474,7 @@ export class BrowserAdapter extends EventEmitter {
 
   async navigate(options: NavigateOptions): Promise<PageSnapshot> {
     const page = this.getActivePage();
-    const startTime = Date.now();
-
-    const response = await page.goto(options.url, {
+    await page.goto(options.url, {
       waitUntil: options.waitUntil || 'domcontentloaded',
       timeout: options.timeout || 30000,
       referer: options.referer

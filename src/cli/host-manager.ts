@@ -1,7 +1,6 @@
 import { accessSync } from 'fs';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
-import * as yaml from 'yaml';
 import chalk from 'chalk';
 
 const HOST_CONFIGS: Record<string, any> = {

@@ -1,8 +1,10 @@
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 import { configManager } from '../config/index.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const packageVersion = (require('../../package.json') as { version: string }).version;
 
 export interface SetupStatus {
   package: { installed: boolean; version: string };
@@ -19,7 +21,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
     chromiumInstalled = existsSync(chromium.executablePath());
   } catch {}
   return {
-    package: { installed: true, version: '0.1.0' },
+    package: { installed: true, version: packageVersion },
     chromium: { installed: chromiumInstalled },
     config: { path: configManager.getLoadedPath(), loaded: true },
     dashboard: { url: 'http://127.0.0.1:8787/' }
