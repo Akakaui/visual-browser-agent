@@ -53,6 +53,8 @@ export class BrowserAdapter extends EventEmitter {
     const config = configManager.getConfig();
 
     switch (options.mode) {
+      case 'auto':
+        return this.connectAutomatically(options);
       case 'managed':
         return this.connectManaged(options);
       case 'extension':
@@ -62,6 +64,19 @@ export class BrowserAdapter extends EventEmitter {
       default:
         throw new Error(`Unknown browser mode: ${options.mode}`);
     }
+  }
+
+  private async connectAutomatically(options: BrowserConnectOptions): Promise<BrowserStatus> {
+    const { getDebugPort } = await import('../cli/profiles.js');
+    const runningPort = options.cdpPort || await getDebugPort();
+    if (runningPort) {
+      try {
+        return await this.connectExtension({ ...options, mode: 'extension', extensionPort: runningPort });
+      } catch {
+        // Existing Chrome was detected but was not attachable; fall back to clean Chromium.
+      }
+    }
+    return this.connectManaged({ ...options, mode: 'managed', headless: options.headless ?? false });
   }
 
   private async connectManaged(options: BrowserConnectOptions): Promise<BrowserStatus> {

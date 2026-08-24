@@ -1,5 +1,5 @@
 export interface BrowserConfig {
-  mode: 'extension' | 'managed' | 'cdp';
+  mode: 'auto' | 'extension' | 'managed' | 'cdp';
   profile: string;
   allowedHosts: string[];
   approvedDirectories: {
@@ -52,7 +52,7 @@ export interface VisualBrowserConfig {
 
 export const DEFAULT_CONFIG: VisualBrowserConfig = {
   browser: {
-    mode: 'extension',
+    mode: 'auto',
     profile: 'default',
     allowedHosts: [],
     approvedDirectories: {

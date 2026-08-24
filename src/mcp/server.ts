@@ -62,18 +62,18 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
       },
       {
         name: 'browser_connect',
-        description: 'Connect to browser (managed Chromium, existing Chrome via extension, or CDP)',
+        description: 'Connect to a browser automatically, or explicitly use existing Chrome, managed Chromium, or CDP',
         inputSchema: {
           type: 'object',
           properties: {
-            mode: { type: 'string', enum: ['extension', 'managed', 'cdp'], default: 'managed' },
+            mode: { type: 'string', enum: ['auto', 'extension', 'managed', 'cdp'], default: 'auto' },
             cdpEndpoint: { type: 'string' },
             extensionPort: { type: 'number', default: 9222 },
             profile: { type: 'string', default: 'default' },
             headless: { type: 'boolean', default: false },
             args: { type: 'array', items: { type: 'string' } }
           },
-          required: ['mode']
+          required: []
         }
       },
       {
@@ -488,7 +488,7 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'browser_connect': {
-          const status = await browserAdapter.connect(args as any);
+          const status = await browserAdapter.connect({ mode: 'auto', ...(args as any || {}) });
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
         }
 

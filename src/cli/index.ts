@@ -67,6 +67,40 @@ program
     }
   });
 
+// First-run setup wizard
+program
+  .command('setup')
+  .description('Set up browser mode for everyday use')
+  .action(async () => {
+    const readline = await import('readline/promises');
+    const { configManager } = await import('../config/index.js');
+    const { chooseChromeProfile } = await import('../cli/profiles.js');
+    await configManager.load();
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      console.log('\nVisual Browser Agent setup\n');
+      console.log('  1. Automatic (recommended) — use an open Chrome account when available, otherwise clean Chromium');
+      console.log('  2. Clean Chromium — isolated browser with no personal logins');
+      console.log('  3. Existing Chrome — use a signed-in account and its cookies');
+      const answer = (await rl.question('\nChoose 1, 2, or 3 [1]: ')).trim() || '1';
+      if (answer === '2') {
+        configManager.set('browser.mode', 'managed');
+        configManager.set('browser.profile', 'default');
+      } else if (answer === '3') {
+        configManager.set('browser.mode', 'extension');
+        const profile = await chooseChromeProfile();
+        if (profile) configManager.set('browser.profile', profile);
+      } else {
+        configManager.set('browser.mode', 'auto');
+        configManager.set('browser.profile', 'default');
+      }
+      const path = await configManager.save();
+      console.log(`\nSetup saved to ${path}. You can now tell your coding agent: “use the browser to …”`);
+    } finally {
+      rl.close();
+    }
+  });
+
 // MCP Server command
 program
   .command('mcp')

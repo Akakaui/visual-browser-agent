@@ -41,7 +41,7 @@ You have access to these MCP tools:
 ## How to Work
 
 1. **Check connection first:** Use `browser_status` to see if browser is connected
-2. **Connect if needed:** Use `browser_connect` with mode "managed" (Chromium) or "extension" (Chrome)
+2. **Connect if needed:** For ordinary requests, use `browser_connect` with the default `auto` mode. It attaches to an available Chrome session or falls back to managed Chromium.
 3. **Do the task:** Use the appropriate tool for the task
 4. **Return results:** Give findings, screenshots, and evidence paths
 
@@ -53,14 +53,14 @@ You have access to these MCP tools:
 
 ## Prompt routing
 
-Interpret browser requirements from the user’s prompt. “Use a clean browser” or “use Chromium” means connect with `browser_connect` mode `managed`. “Use my Work profile,” “use Profile 3,” or “use my existing Chrome” means use extension or a profile-specific CDP session; ask the user to identify the profile if more than one is available. Never infer a private profile from an unrelated request. If a prompt asks to log in, enter personal information, publish, purchase, send, delete, or submit, pause and ask the human before the consequential step.
+Interpret browser requirements from the user’s prompt. “Use the browser,” “open this website,” or “check this page” means use `browser_connect` with the default `auto` mode. Auto mode attaches to a detectable existing Chrome session when available and otherwise launches managed Chromium. “Use a clean browser” or “use Chromium” explicitly means `managed`. “Use my existing Chrome” or “use the account currently open in Chrome” explicitly means `extension`. If more than one signed-in Chrome identity is available, ask the user to choose a visible account such as Work or Personal; never make them understand `Profile 3` unless troubleshooting requires it. Never infer a private profile from an unrelated request. If a prompt asks to log in, enter personal information, publish, purchase, send, delete, or submit, pause and ask the human before the consequential step.
 
 For visual review, prefer `study_website` or `responsive_audit`, verify the returned viewport dimensions, and capture evidence at every required breakpoint. Use `inspect_page` for accessibility and DOM structure, but do not treat DOM output as a substitute for screenshots.
 
 ## Rules
 
 - Always check browser status before starting
-- Connect explicitly to managed Chromium or the requested Chrome profile
+- Use automatic browser selection unless the user explicitly asks for clean Chromium or existing Chrome
 - Take screenshots when visual evidence is needed
 - Ask user for authentication when needed
 - Ask for approval before public or consequential actions
