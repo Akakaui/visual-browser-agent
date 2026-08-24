@@ -71,6 +71,16 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: { type: 'object', properties: {} }
       },
       {
+        name: 'setup_status',
+        description: 'Show whether the Visual Browser Agent runtime, Chromium, configuration, and dashboard are ready',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'install_runtime',
+        description: 'Install an approved Visual Browser Agent runtime component after user confirmation',
+        inputSchema: { type: 'object', properties: { component: { type: 'string', enum: ['chromium', 'config'] }, confirm: { type: 'boolean', default: false } }, required: ['component', 'confirm'] }
+      },
+      {
         name: 'browser_select_profile',
         description: 'Select a Chrome identity by friendly name or email without requiring a terminal command',
         inputSchema: { type: 'object', properties: { identity: { type: 'string' }, headless: { type: 'boolean', default: false } }, required: ['identity'] }
@@ -513,6 +523,17 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
           const profiles = await listProfiles();
           const debugPort = await getDebugPort();
           return { content: [{ type: 'text', text: JSON.stringify({ chromium: 'available through Playwright', chromePath: getChromePath(), chromeProfiles: profiles.length, debugPort, extensionLikelyAvailable: Boolean(debugPort), connected: (await browserAdapter.getStatus()).connected }, null, 2) }] };
+        }
+
+        case 'setup_status': {
+          const { getSetupStatus } = await import('../setup/installer.js');
+          return { content: [{ type: 'text', text: JSON.stringify(await getSetupStatus(), null, 2) }] };
+        }
+
+        case 'install_runtime': {
+          const { installRuntime } = await import('../setup/installer.js');
+          const result = await installRuntime((args as any).component, Boolean((args as any).confirm));
+          return { content: [{ type: 'text', text: result }] };
         }
 
         case 'browser_select_profile': {
