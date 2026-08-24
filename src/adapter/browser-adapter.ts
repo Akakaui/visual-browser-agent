@@ -1,7 +1,7 @@
 import { Browser, BrowserContext, Page, CDPSession, chromium } from 'playwright';
 import { EventEmitter } from 'events';
 import { join } from 'path';
-import { mkdir, readdir, stat } from 'fs/promises';
+import { mkdir, readdir, stat, readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import {
@@ -419,6 +419,15 @@ export class BrowserAdapter extends EventEmitter {
   async clearCookies(): Promise<void> {
     if (!this.state) throw new Error('Browser not connected. Call connect() first.');
     await this.state.context.clearCookies();
+  }
+
+  async restoreStorageState(filepath: string, confirm = false): Promise<{ cookies: number }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    if (!confirm) throw new Error('Restoring storage state changes the active browser session. Ask for confirmation first.');
+    const raw = JSON.parse(await readFile(filepath, 'utf-8')) as { cookies?: Array<Parameters<BrowserContext['addCookies']>[0][number]> };
+    const cookies = raw.cookies || [];
+    await this.state.context.addCookies(cookies);
+    return { cookies: cookies.length };
   }
 
   async saveStorageState(filename = `storage-${Date.now()}.json`): Promise<string> {
