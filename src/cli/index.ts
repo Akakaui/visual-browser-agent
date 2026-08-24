@@ -67,28 +67,81 @@ program
     }
   });
 
+// Local user control panel
+program
+  .command('dashboard')
+  .description('Start the local browser control panel')
+  .option('--port <port>', 'Dashboard port', '8787')
+  .action(async (options) => {
+    const { startDashboard } = await import('../dashboard/server.js');
+    await startDashboard(parseInt(options.port, 10));
+  });
+
+// First-run setup wizard
+program
+  .command('setup')
+  .description('Set up browser mode for everyday use')
+  .action(async () => {
+    const readline = await import('readline/promises');
+    const { configManager } = await import('../config/index.js');
+    const { chooseChromeProfile } = await import('../cli/profiles.js');
+    await configManager.load();
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      console.log('\nVisual Browser Agent setup\n');
+      console.log('  1. Automatic (recommended) — use an open Chrome account when available, otherwise clean Chromium');
+      console.log('  2. Clean Chromium — isolated browser with no personal logins');
+      console.log('  3. Existing Chrome — use a signed-in account and its cookies');
+      const answer = (await rl.question('\nChoose 1, 2, or 3 [1]: ')).trim() || '1';
+      if (answer === '2') {
+        configManager.set('browser.mode', 'managed');
+        configManager.set('browser.profile', 'default');
+      } else if (answer === '3') {
+        configManager.set('browser.mode', 'extension');
+        const profile = await chooseChromeProfile();
+        if (profile) configManager.set('browser.profile', profile);
+      } else {
+        configManager.set('browser.mode', 'auto');
+        configManager.set('browser.profile', 'default');
+      }
+      const path = await configManager.save();
+      console.log(`\nSetup saved to ${path}. You can now tell your coding agent: “use the browser to …”`);
+    } finally {
+      rl.close();
+    }
+  });
+
 // MCP Server command
 program
   .command('mcp')
   .description('Start MCP server')
   .option('--http <port>', 'HTTP port for Streamable HTTP transport')
-  .option('--extension', 'Connect to Chrome via extension (instead of Chromium)')
+  .option('--extension', 'Connect to an existing Chrome session via extension/CDP')
+  .option('--profile <name>', 'Launch/connect to a named Chrome profile or account email')
+  .option('--choose-profile', 'Show a friendly signed-in Chrome account chooser')
   .option('--cdp-port <port>', 'Chrome debug port (default: 9222)')
+  .option('--managed', 'Do not auto-connect to CDP; let the agent call browser_connect with managed Chromium')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
-    const { getDebugPort } = await import('../cli/profiles.js');
+    const { getDebugPort, launchChromeWithProfile, chooseChromeProfile } = await import('../cli/profiles.js');
 
-    let cdpPort = options.cdpPort ? parseInt(options.cdpPort) : 9222;
+    let cdpPort: number | undefined = options.cdpPort ? parseInt(options.cdpPort) : undefined;
+    const selectedProfile = options.profile || (options.chooseProfile ? await chooseChromeProfile() : undefined);
 
-    if (options.extension) {
-      // Extension mode: connect to running Chrome
+    if (selectedProfile) {
+      cdpPort = cdpPort || 9222;
+      await launchChromeWithProfile(selectedProfile, cdpPort);
+    } else if (options.extension) {
+      // Extension mode connects to an already-running Chrome session.
       const existingPort = await getDebugPort();
-      if (existingPort) {
-        cdpPort = existingPort;
-      }
+      if (existingPort) cdpPort = existingPort;
+    } else if (!options.managed) {
+      // Preserve the historical convenience behavior when a debug browser exists,
+      // while allowing explicit managed mode to avoid unintended CDP attachment.
+      cdpPort = cdpPort || await getDebugPort() || undefined;
     }
 
-    await startMCPServer(options.http ? parseInt(options.http) : undefined, { cdpPort });
+    await startMCPServer(options.http ? parseInt(options.http) : undefined, cdpPort ? { cdpPort } : undefined);
   });
 
 // Doctor command
@@ -124,7 +177,7 @@ program
 program
   .command('init')
   .description('Initialize project config and skills')
-  .option('--mode <mode>', 'Browser mode: chrome | managed', 'chrome')
+  .option('--mode <mode>', 'Browser mode: chrome | chromium', 'chromium')
   .action(async (options) => {
     const { initProject } = await import('../cli/init.js');
     await initProject(options.mode);

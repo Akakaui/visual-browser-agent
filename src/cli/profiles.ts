@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { accessSync } from 'fs';
+import { homedir, platform } from 'os';
 import { join } from 'path';
 import { spawn, execSync } from 'child_process';
 import chalk from 'chalk';
@@ -8,29 +9,52 @@ export interface ChromeProfile {
   name: string;
   directory: string;
   displayName?: string;
+  accountEmail?: string;
   isDefault: boolean;
   lastUsed?: number;
 }
 
-const CHROME_USER_DATA = join(
-  process.env['LOCALAPPDATA'] || '',
-  'Google', 'Chrome', 'User Data'
-);
+function getChromeUserDataDir(): string {
+  if (platform() === 'win32') {
+    return join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'Google', 'Chrome', 'User Data');
+  }
+  if (platform() === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+  }
+  return join(process.env['XDG_CONFIG_HOME'] || join(homedir(), '.config'), 'google-chrome');
+}
 
-const CHROME_PATHS = [
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  join(process.env['LOCALAPPDATA'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
-];
+function getChromePathCandidates(): string[] {
+  if (platform() === 'win32') {
+    return [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ];
+  }
+  if (platform() === 'darwin') {
+    return ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', join(homedir(), 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome')];
+  }
+  return ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+}
+
+const CHROME_USER_DATA = getChromeUserDataDir();
 
 // ── Chrome Detection ──────────────────────────────────────────────────────────
 
 export function getChromePath(): string | null {
-  for (const p of CHROME_PATHS) {
+  for (const p of getChromePathCandidates()) {
     try {
       accessSync(p);
       return p;
     } catch {}
+  }
+  if (platform() !== 'win32') {
+    for (const command of ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser']) {
+      try {
+        return execSync(`command -v ${command}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      } catch {}
+    }
   }
   return null;
 }
@@ -43,6 +67,12 @@ export function isChromeInstalled(): boolean {
 
 export async function listProfiles(): Promise<ChromeProfile[]> {
   const profiles: ChromeProfile[] = [];
+  let profileInfoCache: Record<string, { name?: string; user_name?: string; gaia_name?: string }> = {};
+
+  try {
+    const localState = JSON.parse(await readFile(join(CHROME_USER_DATA, 'Local State'), 'utf-8'));
+    profileInfoCache = localState?.profile?.info_cache || {};
+  } catch {}
 
   try {
     const entries = await readdir(CHROME_USER_DATA);
@@ -55,11 +85,17 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
       if (!s.isDirectory()) continue;
 
       let displayName: string | undefined;
+      let accountEmail: string | undefined;
       let lastUsed: number | undefined;
+      const cachedInfo = profileInfoCache[entry];
+      displayName = cachedInfo?.name;
+      accountEmail = cachedInfo?.user_name || cachedInfo?.gaia_name;
 
       try {
         const prefs = JSON.parse(await readFile(join(profilePath, 'Preferences'), 'utf-8'));
-        displayName = prefs?.profile?.name;
+        displayName = prefs?.profile?.name || displayName;
+        const accountInfo = prefs?.account_info?.[0];
+        accountEmail = (typeof accountInfo?.email === 'string' ? accountInfo.email : undefined) || accountEmail;
         lastUsed = prefs?.profile?.last_used ? Number(prefs.profile.last_used) : undefined;
       } catch {}
 
@@ -67,6 +103,7 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
         name: entry,
         directory: profilePath,
         displayName: displayName || (entry === 'Default' ? 'Default' : entry),
+        accountEmail,
         isDefault: entry === 'Default',
         lastUsed
       });
@@ -80,6 +117,34 @@ export async function listProfiles(): Promise<ChromeProfile[]> {
   });
 
   return profiles;
+}
+
+export async function chooseChromeProfile(): Promise<string | null> {
+  const profiles = await listProfiles();
+  if (profiles.length === 0) {
+    throw new Error('No Chrome profiles found. Open Chrome once and sign in to a profile, then try again.');
+  }
+
+  console.log(chalk.bold('\nChoose the Chrome account to use:\n'));
+  profiles.forEach((profile, index) => {
+    const identity = profile.accountEmail || profile.displayName || profile.name;
+    const suffix = profile.displayName && profile.accountEmail ? ` — ${profile.displayName}` : '';
+    console.log(`  ${index + 1}. ${identity}${suffix}`);
+  });
+
+  const readline = await import('readline/promises');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question('\nEnter a number (or type the account/profile name): ')).trim();
+    const index = Number(answer) - 1;
+    if (Number.isInteger(index) && profiles[index]) return profiles[index].name;
+    const normalized = answer.toLowerCase();
+    const match = profiles.find(profile => [profile.name, profile.displayName, profile.accountEmail].filter(Boolean).some(value => value!.toLowerCase() === normalized));
+    if (match) return match.name;
+    throw new Error('Profile choice not recognized. Run "visual-browser-agent profiles" to see available identities.');
+  } finally {
+    rl.close();
+  }
 }
 
 export async function printProfiles(): Promise<void> {
@@ -100,6 +165,7 @@ export async function printProfiles(): Promise<void> {
     // Show profile name + display name so user knows which is which
     console.log('  ' + chalk.cyan(p.name) + tag);
     console.log('    Name: ' + name);
+    if (p.accountEmail) console.log('    Account: ' + p.accountEmail);
     console.log('    Last: ' + last);
     console.log('');
   }
@@ -131,7 +197,8 @@ export async function launchChromeWithProfile(
 
   // Validate profile
   const profiles = await listProfiles();
-  const profile = profiles.find(p => p.name === profileName);
+  const requested = profileName.toLowerCase();
+  const profile = profiles.find(p => [p.name, p.displayName, p.accountEmail].filter(Boolean).some(value => value!.toLowerCase() === requested));
   if (!profile) {
     throw new Error(
       `Profile "${profileName}" not found.\n` +
@@ -184,7 +251,10 @@ export async function connectToRunningChrome(port: number = 9222): Promise<boole
 async function killChromeOnPort(port: number): Promise<void> {
   try {
     // Find processes using the port
-    const output = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, {
+    const command = platform() === 'win32'
+      ? `netstat -ano | findstr :${port} | findstr LISTENING`
+      : `lsof -ti tcp:${port} -sTCP:LISTEN || true`;
+    const output = execSync(command, {
       encoding: 'utf-8',
       timeout: 5000
     }).trim();
@@ -192,10 +262,11 @@ async function killChromeOnPort(port: number): Promise<void> {
     if (!output) return;
 
     // Extract PIDs and kill them
-    const pids = [...new Set(output.split('\n').map(line => line.trim().split(/\s+/).pop()).filter(Boolean))];
+    const pids = [...new Set(output.split('\n').map(line => platform() === 'win32' ? line.trim().split(/\s+/).pop() : line.trim()).filter(Boolean))];
     for (const pid of pids) {
       try {
-        execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: 'ignore' });
+        if (platform() === 'win32') execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: 'ignore' });
+        else execSync(`kill ${pid}`, { timeout: 5000, stdio: 'ignore' });
       } catch {}
     }
 

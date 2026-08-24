@@ -1,5 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { readFile } from 'fs/promises';
+import { extname } from 'path';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -14,7 +16,8 @@ This server provides browser automation with visual evidence capture, human hand
 
 Tools are organized by risk level:
 - Read-only (auto-approved): browser_status, inspect_page, capture_screenshot, review_visual_evidence
-- Actions (host-controlled): browser_connect, navigate, click, fill, upload_file, download_file, record_interaction
+- Actions (host-controlled): browser_connect, navigate, click, fill, press, select_option, check, scroll, wait_for, drag, upload_file, download_file, record_interaction, pdf_save
+- Page and locator controls: tabs, new_page, switch_page, close_page, go_back, go_forward, reload, get_text, get_attribute, is_visible
 - Workflows (policy-controlled): study_website, responsive_audit, animation_study
 - Human interaction (always available): ask_human, request_approval, submit_public_action, delete_artifacts
 
@@ -60,19 +63,44 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         inputSchema: { type: 'object', properties: {} }
       },
       {
+        name: 'browser_profiles',
+        description: 'List friendly Chrome identities/accounts available for browser selection',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'browser_doctor',
+        description: 'Diagnose Chrome, Chromium, extension, profile, and connection readiness',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'setup_status',
+        description: 'Show whether the Visual Browser Agent runtime, Chromium, configuration, and dashboard are ready',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'install_runtime',
+        description: 'Install an approved Visual Browser Agent runtime component after user confirmation',
+        inputSchema: { type: 'object', properties: { component: { type: 'string', enum: ['chromium', 'config'] }, confirm: { type: 'boolean', default: false } }, required: ['component', 'confirm'] }
+      },
+      {
+        name: 'browser_select_profile',
+        description: 'Select a Chrome identity by friendly name or email without requiring a terminal command',
+        inputSchema: { type: 'object', properties: { identity: { type: 'string' }, headless: { type: 'boolean', default: false } }, required: ['identity'] }
+      },
+      {
         name: 'browser_connect',
-        description: 'Connect to browser (managed Chromium, existing Chrome via extension, or CDP)',
+        description: 'Connect to a browser automatically, or explicitly use existing Chrome, managed Chromium, or CDP',
         inputSchema: {
           type: 'object',
           properties: {
-            mode: { type: 'string', enum: ['extension', 'managed', 'cdp'], default: 'extension' },
+            mode: { type: 'string', enum: ['auto', 'extension', 'managed', 'cdp'], default: 'auto' },
             cdpEndpoint: { type: 'string' },
             extensionPort: { type: 'number', default: 9222 },
             profile: { type: 'string', default: 'default' },
             headless: { type: 'boolean', default: false },
             args: { type: 'array', items: { type: 'string' } }
           },
-          required: ['mode']
+          required: []
         }
       },
       {
@@ -170,6 +198,194 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
           },
           required: ['selector', 'value']
         }
+      },
+      {
+        name: 'press',
+        description: 'Press a keyboard key or key combination on an element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, key: { type: 'string' } },
+          required: ['selector', 'key']
+        }
+      },
+      {
+        name: 'select_option',
+        description: 'Select an option in a native select element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, value: { type: 'string' }, label: { type: 'string' }, index: { type: 'number' } },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'check',
+        description: 'Check or uncheck a checkbox or radio control',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, checked: { type: 'boolean', default: true } },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'scroll',
+        description: 'Scroll the page or a scrollable element',
+        inputSchema: {
+          type: 'object',
+          properties: { selector: { type: 'string' }, x: { type: 'number', default: 0 }, y: { type: 'number', default: 500 } }
+        }
+      },
+      {
+        name: 'wait_for',
+        description: 'Wait for a page load state or a bounded duration',
+        inputSchema: {
+          type: 'object',
+          properties: { state: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }, timeout: { type: 'number' }, milliseconds: { type: 'number' } }
+        }
+      },
+      {
+        name: 'drag',
+        description: 'Drag an element to another element',
+        inputSchema: { type: 'object', properties: { source: { type: 'string' }, target: { type: 'string' } }, required: ['source', 'target'] }
+      },
+      {
+        name: 'pdf_save',
+        description: 'Save the active page as a PDF in the approved downloads directory',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'tabs',
+        description: 'List open pages/tabs and their URLs and titles',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'new_page',
+        description: 'Open a new page and optionally navigate to a URL',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' } } }
+      },
+      {
+        name: 'switch_page',
+        description: 'Switch the active page by its tab index',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } }, required: ['index'] }
+      },
+      {
+        name: 'close_page',
+        description: 'Close a page by tab index, defaulting to the active page',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } } }
+      },
+      {
+        name: 'go_back',
+        description: 'Navigate the active page back in history',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'go_forward',
+        description: 'Navigate the active page forward in history',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'reload',
+        description: 'Reload the active page',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'get_text',
+        description: 'Read visible text from a selector',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
+        name: 'get_attribute',
+        description: 'Read an attribute from a selector',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' }, name: { type: 'string' } }, required: ['selector', 'name'] }
+      },
+      {
+        name: 'is_visible',
+        description: 'Check whether a selector is visible',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
+        name: 'locator_by_role',
+        description: 'Create a stable locator reference from an accessible role and optional accessible name',
+        inputSchema: { type: 'object', properties: { role: { type: 'string' }, name: { type: 'string' }, exact: { type: 'boolean', default: false } }, required: ['role'] }
+      },
+      {
+        name: 'locator_ref',
+        description: 'Create a stable locator reference from a selector for later actions/assertions',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' } }, required: ['selector'] }
+      },
+      {
+        name: 'assert',
+        description: 'Run a Playwright-style web-first locator assertion',
+        inputSchema: { type: 'object', properties: { selector: { type: 'string' }, assertion: { type: 'string', enum: ['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked', 'text', 'count'] }, expected: { type: ['string', 'number'] } }, required: ['selector', 'assertion'] }
+      },
+      {
+        name: 'frames',
+        description: 'List frames in the active page',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'inspect_frame',
+        description: 'Inspect a frame by index',
+        inputSchema: { type: 'object', properties: { index: { type: 'number' } }, required: ['index'] }
+      },
+      {
+        name: 'handle_dialog',
+        description: 'Configure the next page dialog to be accepted or dismissed',
+        inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['accept', 'dismiss'] }, promptText: { type: 'string' } }, required: ['action'] }
+      },
+      {
+        name: 'cookies',
+        description: 'List cookies for the active browser context',
+        inputSchema: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' } } } }
+      },
+      {
+        name: 'cookies_clear',
+        description: 'Clear all cookies in the active browser context',
+        inputSchema: { type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'] }
+      },
+      {
+        name: 'storage_state_save',
+        description: 'Save cookies and local storage to an approved artifact path',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'network_requests',
+        description: 'List recent requests observed in the active session',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'network_route',
+        description: 'Mock matching requests with a controlled response',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' }, status: { type: 'number' }, contentType: { type: 'string' }, body: { type: 'string' } }, required: ['url'] }
+      },
+      {
+        name: 'network_unroute',
+        description: 'Remove a request mock',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] }
+      },
+      {
+        name: 'console_messages',
+        description: 'List recent console and page-error messages',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'trace_start',
+        description: 'Start a Playwright trace with screenshots and DOM snapshots',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'trace_stop',
+        description: 'Stop tracing and save the trace to approved artifacts',
+        inputSchema: { type: 'object', properties: { filename: { type: 'string' } } }
+      },
+      {
+        name: 'emulate_media',
+        description: 'Emulate print/screen media and color scheme',
+        inputSchema: { type: 'object', properties: { media: { type: 'string', enum: ['screen', 'print'] }, colorScheme: { type: 'string', enum: ['light', 'dark', 'no-preference'] } } }
+      },
+      {
+        name: 'evaluate',
+        description: 'Evaluate trusted JavaScript on the active page; blocked unless explicitly confirmed',
+        inputSchema: { type: 'object', properties: { expression: { type: 'string' }, confirmDangerous: { type: 'boolean', default: false } }, required: ['expression'] }
       },
       {
         name: 'upload_file',
@@ -299,12 +515,43 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
     try {
       switch (name) {
         case 'browser_status': {
-          const status = browserAdapter.getStatus();
+          const status = await browserAdapter.getStatus();
+          return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
+        }
+
+        case 'browser_profiles': {
+          const { listProfiles } = await import('../cli/profiles.js');
+          const profiles = await listProfiles();
+          return { content: [{ type: 'text', text: JSON.stringify(profiles.map(profile => ({ name: profile.displayName || profile.name, email: profile.accountEmail, technicalName: profile.name, default: profile.isDefault })), null, 2) }] };
+        }
+
+        case 'browser_doctor': {
+          const { getChromePath, getDebugPort, listProfiles } = await import('../cli/profiles.js');
+          const profiles = await listProfiles();
+          const debugPort = await getDebugPort();
+          return { content: [{ type: 'text', text: JSON.stringify({ chromium: 'available through Playwright', chromePath: getChromePath(), chromeProfiles: profiles.length, debugPort, extensionLikelyAvailable: Boolean(debugPort), connected: (await browserAdapter.getStatus()).connected }, null, 2) }] };
+        }
+
+        case 'setup_status': {
+          const { getSetupStatus } = await import('../setup/installer.js');
+          return { content: [{ type: 'text', text: JSON.stringify(await getSetupStatus(), null, 2) }] };
+        }
+
+        case 'install_runtime': {
+          const { installRuntime } = await import('../setup/installer.js');
+          const result = await installRuntime((args as any).component, Boolean((args as any).confirm));
+          return { content: [{ type: 'text', text: result }] };
+        }
+
+        case 'browser_select_profile': {
+          const { launchChromeWithProfile } = await import('../cli/profiles.js');
+          const selected = await launchChromeWithProfile((args as any).identity, 9222);
+          const status = await browserAdapter.connect({ mode: 'extension', extensionPort: selected, headless: Boolean((args as any).headless) });
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
         }
 
         case 'browser_connect': {
-          const status = await browserAdapter.connect(args as any);
+          const status = await browserAdapter.connect({ mode: 'auto', ...(args as any || {}) });
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
         }
 
@@ -319,8 +566,13 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'capture_screenshot': {
-          const result = await browserAdapter.captureScreenshot(args as any);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          const result = await browserAdapter.captureScreenshot(args as any) as any;
+          const artifactPath = result.path || result.filepath || result.filename;
+          const content: any[] = [{ type: 'text', text: JSON.stringify({ ...result, artifact: artifactPath ? { name: artifactPath.split(/[\\\\/]/).pop(), path: artifactPath, mimeType: 'image/png', preview: true } : undefined }, null, 2) }];
+          if (artifactPath) {
+            try { content.push({ type: 'image', data: (await readFile(artifactPath)).toString('base64'), mimeType: 'image/png' }); } catch {}
+          }
+          return { content };
         }
 
         case 'record_interaction': {
@@ -342,6 +594,160 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         case 'fill': {
           await browserAdapter.fill(args as any);
           return { content: [{ type: 'text', text: 'Filled successfully' }] };
+        }
+
+        case 'press': {
+          await browserAdapter.press(args as any);
+          return { content: [{ type: 'text', text: 'Pressed successfully' }] };
+        }
+
+        case 'select_option': {
+          await browserAdapter.selectOption(args as any);
+          return { content: [{ type: 'text', text: 'Option selected successfully' }] };
+        }
+
+        case 'check': {
+          await browserAdapter.check(args as any);
+          return { content: [{ type: 'text', text: 'Checkbox state updated successfully' }] };
+        }
+
+        case 'scroll': {
+          await browserAdapter.scroll(args as any);
+          return { content: [{ type: 'text', text: 'Scrolled successfully' }] };
+        }
+
+        case 'wait_for': {
+          await browserAdapter.waitFor(args as any);
+          return { content: [{ type: 'text', text: 'Wait completed successfully' }] };
+        }
+
+        case 'drag': {
+          await browserAdapter.drag((args as any).source, (args as any).target);
+          return { content: [{ type: 'text', text: 'Dragged successfully' }] };
+        }
+
+        case 'pdf_save': {
+          const path = await browserAdapter.savePdf((args as any)?.filename);
+          return { content: [{ type: 'text', text: JSON.stringify({ artifact: { name: path.split(/[\\\\/]/).pop(), path, mimeType: 'application/pdf', preview: true } }) }] };
+        }
+
+        case 'tabs': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.listPages(), null, 2) }] };
+        }
+
+        case 'new_page': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.newPage((args as any)?.url), null, 2) }] };
+        }
+
+        case 'switch_page': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.switchPage((args as any).index), null, 2) }] };
+        }
+
+        case 'close_page': {
+          await browserAdapter.closePage((args as any)?.index);
+          return { content: [{ type: 'text', text: 'Page closed successfully' }] };
+        }
+
+        case 'go_back': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.goBack(), null, 2) }] };
+        }
+
+        case 'go_forward': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.goForward(), null, 2) }] };
+        }
+
+        case 'reload': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.reload(), null, 2) }] };
+        }
+
+        case 'get_text': {
+          return { content: [{ type: 'text', text: await browserAdapter.getText((args as any).selector) }] };
+        }
+
+        case 'get_attribute': {
+          const value = await browserAdapter.getAttribute((args as any).selector, (args as any).name);
+          return { content: [{ type: 'text', text: value ?? '' }] };
+        }
+
+        case 'is_visible': {
+          return { content: [{ type: 'text', text: String(await browserAdapter.isVisible((args as any).selector)) }] };
+        }
+
+        case 'locator_by_role': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.createRoleLocatorRef(args as any), null, 2) }] };
+        }
+
+        case 'locator_ref': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.createLocatorRef((args as any).selector), null, 2) }] };
+        }
+
+        case 'assert': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.assertLocator(args as any), null, 2) }] };
+        }
+
+        case 'frames': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.listFrames(), null, 2) }] };
+        }
+
+        case 'inspect_frame': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.inspectFrame((args as any).index), null, 2) }] };
+        }
+
+        case 'handle_dialog': {
+          await browserAdapter.setDialogAction((args as any).action, (args as any).promptText);
+          return { content: [{ type: 'text', text: 'Dialog policy configured' }] };
+        }
+
+        case 'cookies': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getCookies((args as any)?.urls), null, 2) }] };
+        }
+
+        case 'cookies_clear': {
+          if (!(args as any)?.confirm) throw new Error('Cookie clearing requires confirm=true.');
+          await browserAdapter.clearCookies();
+          return { content: [{ type: 'text', text: 'Cookies cleared' }] };
+        }
+
+        case 'storage_state_save': {
+          return { content: [{ type: 'text', text: `Storage state saved to: ${await browserAdapter.saveStorageState((args as any)?.filename)}` }] };
+        }
+
+        case 'network_requests': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getNetworkRequests(), null, 2) }] };
+        }
+
+        case 'network_route': {
+          await browserAdapter.routeMock(args as any);
+          return { content: [{ type: 'text', text: 'Network route configured' }] };
+        }
+
+        case 'network_unroute': {
+          await browserAdapter.unrouteMock((args as any).url);
+          return { content: [{ type: 'text', text: 'Network route removed' }] };
+        }
+
+        case 'console_messages': {
+          return { content: [{ type: 'text', text: JSON.stringify(await browserAdapter.getConsoleMessages(), null, 2) }] };
+        }
+
+        case 'trace_start': {
+          await browserAdapter.startTracing();
+          return { content: [{ type: 'text', text: 'Tracing started' }] };
+        }
+
+        case 'trace_stop': {
+          const path = await browserAdapter.stopTracing((args as any)?.filename);
+          return { content: [{ type: 'text', text: JSON.stringify({ artifact: { name: path.split(/[\\\\/]/).pop(), path, mimeType: 'application/zip', preview: false } }) }] };
+        }
+
+        case 'emulate_media': {
+          await browserAdapter.emulateMedia(args as any);
+          return { content: [{ type: 'text', text: 'Media emulation applied' }] };
+        }
+
+        case 'evaluate': {
+          const result = await browserAdapter.runPageEvaluation((args as any).expression, Boolean((args as any).confirmDangerous));
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
         case 'upload_file': {
@@ -380,10 +786,11 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         }
 
         case 'submit_public_action': {
-          return { content: [{ type: 'text', text: 'Public action submitted (requires approval flow)' }] };
+          throw new Error('Public action blocked by default. Call request_approval first, then retry only with an approval record.');
         }
 
         case 'delete_artifacts': {
+          if (!(args as any)?.confirm) throw new Error('Artifact deletion requires confirm=true.');
           const { deleteArtifacts } = await import('../retention/manager.js');
           await deleteArtifacts((args as any)?.paths || []);
           return { content: [{ type: 'text', text: 'Artifacts deleted' }] };
@@ -431,6 +838,7 @@ async function studyWebsite(args: any): Promise<any> {
   const results: any = { url, viewports: [], pages: [] };
 
   for (const viewport of viewports) {
+    await browserAdapter.setViewportSize(viewport.width, viewport.height);
     await browserAdapter.navigate({ url, waitUntil: 'networkidle' });
     await browserAdapter.captureScreenshot({ action: `viewport-${viewport.name}`, requirement: `${viewport.name} layout` });
 
@@ -453,6 +861,7 @@ async function responsiveAudit(args: any): Promise<any> {
   const results: any = { url, viewports: [], issues: [] };
 
   for (const viewport of viewports) {
+    await browserAdapter.setViewportSize(viewport.width, viewport.height);
     await browserAdapter.navigate({ url, waitUntil: 'networkidle' });
     await browserAdapter.captureScreenshot({ action: `responsive-${viewport.name}`, requirement: `${viewport.name} breakpoint` });
 

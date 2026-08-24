@@ -1,3 +1,4 @@
+import { accessSync } from 'fs';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
 import * as yaml from 'yaml';
@@ -200,7 +201,7 @@ export class HostManager {
     // Check if host-specific wrapper exists, otherwise use universal
     const hostSpecificPath = join(process.cwd(), hostWrapper);
     try {
-      require('fs').accessSync(hostSpecificPath);
+      accessSync(hostSpecificPath);
       return hostSpecificPath;
     } catch {
       // Use universal wrapper
@@ -208,7 +209,7 @@ export class HostManager {
 
     const universalPath = join(process.cwd(), universalWrapper);
     try {
-      require('fs').accessSync(universalPath);
+      accessSync(universalPath);
       return universalPath;
     } catch {
       return null;

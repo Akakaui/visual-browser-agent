@@ -1,6 +1,10 @@
+import { existsSync } from 'fs';
 import { writeFile, readFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { isChromeInstalled, listProfiles } from './profiles.js';
 import { SkillManager } from '../skills/manager.js';
 
@@ -33,8 +37,6 @@ const CONFIG_TEMPLATE = '# Visual Browser Agent Configuration\n' +
 
 // Detect which coding agent is being used
 function detectAgent(): string | null {
-  const { existsSync } = require('fs');
-
   // Check for common agent config directories
   if (existsSync('.claude')) return 'claude-code';
   if (existsSync('.cursor')) return 'cursor';
@@ -86,7 +88,8 @@ async function installUniversalWrapper(agent: string): Promise<void> {
 }
 
 export async function initProject(mode: string = 'chromium'): Promise<void> {
-  console.log(chalk.bold('\nVisual Browser Agent - Init\n'));
+  const selectedMode = mode === 'chrome' ? 'chrome' : 'chromium';
+  console.log(chalk.bold(`\nVisual Browser Agent - Init (${selectedMode})\n`));
 
   const configPath = join(process.cwd(), 'visual-browser-agent.config.yaml');
 
@@ -96,7 +99,7 @@ export async function initProject(mode: string = 'chromium'): Promise<void> {
     console.log(chalk.dim('Config already exists, skipping...'));
   } catch {
     // Write default config
-    await writeFile(configPath, CONFIG_TEMPLATE, 'utf-8');
+    await writeFile(configPath, CONFIG_TEMPLATE.replace('mode: chromium', `mode: ${selectedMode}`), 'utf-8');
     console.log(chalk.green('Created visual-browser-agent.config.yaml'));
   }
 

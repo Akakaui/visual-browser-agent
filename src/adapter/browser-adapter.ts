@@ -1,7 +1,7 @@
 import { Browser, BrowserContext, Page, CDPSession, chromium } from 'playwright';
 import { EventEmitter } from 'events';
 import { join } from 'path';
-import { mkdir, readdir, stat } from 'fs/promises';
+import { mkdir, readdir, stat, readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import {
@@ -34,6 +34,12 @@ interface ManagedBrowserState {
   recordingPage?: Page;
   runContext?: RunContext;
   rollingChunks: Buffer[];
+  consoleMessages: Array<{ type: string; text: string; timestamp: number }>;
+  networkRequests: Array<{ method: string; url: string; resourceType: string; timestamp: number }>;
+  locatorRefs: Map<string, string>;
+  nextLocatorRef: number;
+  dialogAction?: { action: 'accept' | 'dismiss'; promptText?: string };
+  tracing: boolean;
 }
 
 export class BrowserAdapter extends EventEmitter {
@@ -47,6 +53,8 @@ export class BrowserAdapter extends EventEmitter {
     const config = configManager.getConfig();
 
     switch (options.mode) {
+      case 'auto':
+        return this.connectAutomatically(options);
       case 'managed':
         return this.connectManaged(options);
       case 'extension':
@@ -56,6 +64,19 @@ export class BrowserAdapter extends EventEmitter {
       default:
         throw new Error(`Unknown browser mode: ${options.mode}`);
     }
+  }
+
+  private async connectAutomatically(options: BrowserConnectOptions): Promise<BrowserStatus> {
+    const { getDebugPort } = await import('../cli/profiles.js');
+    const runningPort = options.cdpPort || await getDebugPort();
+    if (runningPort) {
+      try {
+        return await this.connectExtension({ ...options, mode: 'extension', extensionPort: runningPort });
+      } catch {
+        // Existing Chrome was detected but was not attachable; fall back to clean Chromium.
+      }
+    }
+    return this.connectManaged({ ...options, mode: 'managed', headless: options.headless ?? false });
   }
 
   private async connectManaged(options: BrowserConnectOptions): Promise<BrowserStatus> {
@@ -103,7 +124,12 @@ export class BrowserAdapter extends EventEmitter {
       browser,
       context,
       defaultPage,
-      rollingChunks: []
+      rollingChunks: [],
+      consoleMessages: [],
+      networkRequests: [],
+      locatorRefs: new Map(),
+      nextLocatorRef: 1,
+      tracing: false
     };
 
     this.setupBrowserListeners(browser);
@@ -128,7 +154,12 @@ export class BrowserAdapter extends EventEmitter {
         browser,
         context,
         defaultPage,
-        rollingChunks: []
+        rollingChunks: [],
+        consoleMessages: [],
+        networkRequests: [],
+        locatorRefs: new Map(),
+        nextLocatorRef: 1,
+        tracing: false
       };
 
       this.extensionConnected = true;
@@ -159,7 +190,12 @@ export class BrowserAdapter extends EventEmitter {
       browser,
       context,
       defaultPage,
-      rollingChunks: []
+      rollingChunks: [],
+      consoleMessages: [],
+      networkRequests: [],
+      locatorRefs: new Map(),
+      nextLocatorRef: 1,
+      tracing: false
     };
 
     this.setupBrowserListeners(browser);
@@ -176,13 +212,29 @@ export class BrowserAdapter extends EventEmitter {
 
   private async setupPageListeners(page: Page): Promise<void> {
     page.on('console', msg => {
-      if (msg.type() === 'error') {
-        this.emit('consoleError', msg.text());
-      }
+      const entry = { type: msg.type(), text: msg.text(), timestamp: Date.now() };
+      this.state?.consoleMessages.push(entry);
+      if (this.state && this.state.consoleMessages.length > 500) this.state.consoleMessages.shift();
+      if (msg.type() === 'error') this.emit('consoleError', msg.text());
     });
 
     page.on('pageerror', error => {
+      const entry = { type: 'pageerror', text: error.message, timestamp: Date.now() };
+      this.state?.consoleMessages.push(entry);
       this.emit('pageError', error.message);
+    });
+
+    page.on('request', request => {
+      const entry = { method: request.method(), url: request.url(), resourceType: request.resourceType(), timestamp: Date.now() };
+      this.state?.networkRequests.push(entry);
+      if (this.state && this.state.networkRequests.length > 1000) this.state.networkRequests.shift();
+    });
+
+    page.on('dialog', async dialog => {
+      const configured = this.state?.dialogAction;
+      this.emit('dialog', { type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue() });
+      if (configured?.action === 'accept') await dialog.accept(configured.promptText);
+      else await dialog.dismiss();
     });
 
     page.on('load', () => {
@@ -231,6 +283,201 @@ export class BrowserAdapter extends EventEmitter {
       } : undefined,
       approvedDirectories: Object.values(configManager.getConfig().browser.approvedDirectories)
     };
+  }
+
+  async listPages(): Promise<Array<{ index: number; url: string; title: string }>> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const pages = this.state.context.pages();
+    return Promise.all(pages.map(async (page, index) => ({ index, url: page.url(), title: await page.title().catch(() => '') })));
+  }
+
+  async newPage(url?: string): Promise<{ index: number; url: string; title: string }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const page = await this.state.context.newPage();
+    await this.setupPageListeners(page);
+    this.state.defaultPage = page;
+    if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const pages = this.state.context.pages();
+    return { index: pages.indexOf(page), url: page.url(), title: await page.title().catch(() => '') };
+  }
+
+  async switchPage(index: number): Promise<{ index: number; url: string; title: string }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const page = this.state.context.pages()[index];
+    if (!page) throw new Error(`Page index ${index} not found.`);
+    this.state.defaultPage = page;
+    return { index, url: page.url(), title: await page.title().catch(() => '') };
+  }
+
+  async closePage(index?: number): Promise<void> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const pages = this.state.context.pages();
+    const page = pages[index ?? pages.indexOf(this.state.defaultPage)];
+    if (!page) throw new Error(`Page index ${index ?? -1} not found.`);
+    await page.close();
+    const remaining = this.state.context.pages();
+    if (remaining.length > 0) this.state.defaultPage = remaining[Math.min(index ?? 0, remaining.length - 1)]!;
+  }
+
+  async goBack(): Promise<PageSnapshot> {
+    await this.getActivePage().goBack({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async goForward(): Promise<PageSnapshot> {
+    await this.getActivePage().goForward({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async reload(): Promise<PageSnapshot> {
+    await this.getActivePage().reload({ waitUntil: 'domcontentloaded' });
+    return this.inspectPage({ includeA11y: true, includeDOM: true });
+  }
+
+  async getText(selector: string): Promise<string> {
+    return (await this.getActivePage().locator(selector).innerText()).trim();
+  }
+
+  async getAttribute(selector: string, name: string): Promise<string | null> {
+    return this.getActivePage().locator(selector).getAttribute(name);
+  }
+
+  async isVisible(selector: string): Promise<boolean> {
+    return this.getActivePage().locator(selector).isVisible();
+  }
+
+  private resolveSelector(selectorOrRef: string): string {
+    if (selectorOrRef.startsWith('ref:')) {
+      const selector = this.state?.locatorRefs.get(selectorOrRef);
+      if (!selector) throw new Error(`Unknown locator reference: ${selectorOrRef}`);
+      return selector;
+    }
+    return selectorOrRef;
+  }
+
+  async createRoleLocatorRef(options: { role: string; name?: string; exact?: boolean }): Promise<{ ref: string; role: string; name?: string; count: number }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const locator = this.getActivePage().getByRole(options.role as any, { name: options.name, exact: options.exact });
+    const count = await locator.count();
+    if (count === 0) throw new Error(`No accessible element matched role ${options.role}${options.name ? ` named ${options.name}` : ''}. Inspect the page and try a visible role/name.`);
+    const ref = `ref:${this.state.nextLocatorRef++}`;
+    const tagByRole: Record<string, string> = { button: 'button', link: 'a', textbox: 'input,textarea', checkbox: 'input[type="checkbox"]', radio: 'input[type="radio"]', heading: 'h1,h2,h3,h4,h5,h6' };
+    const tag = tagByRole[options.role] || `[role="${options.role}"]`;
+    const selector = options.name ? `${tag}:has-text("${options.name.replace(/\\"/g, '\\\\"')}")` : tag;
+    this.state.locatorRefs.set(ref, selector);
+    return { ref, role: options.role, name: options.name, count };
+  }
+
+  async createLocatorRef(selector: string): Promise<{ ref: string; selector: string; count: number }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const resolved = this.resolveSelector(selector);
+    const count = await this.getActivePage().locator(resolved).count();
+    if (count === 0) throw new Error(`No element matched selector: ${resolved}`);
+    const ref = `ref:${this.state.nextLocatorRef++}`;
+    this.state.locatorRefs.set(ref, resolved);
+    return { ref, selector: resolved, count };
+  }
+
+  async assertLocator(options: { selector: string; assertion: 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked' | 'unchecked' | 'text' | 'count'; expected?: string | number }): Promise<{ passed: true; selector: string }> {
+    const selector = this.resolveSelector(options.selector);
+    const locator = this.getActivePage().locator(selector);
+    let passed = false;
+    switch (options.assertion) {
+      case 'visible': passed = await locator.isVisible(); break;
+      case 'hidden': passed = !(await locator.isVisible()); break;
+      case 'enabled': passed = await locator.isEnabled(); break;
+      case 'disabled': passed = !(await locator.isEnabled()); break;
+      case 'checked': passed = await locator.isChecked(); break;
+      case 'unchecked': passed = !(await locator.isChecked()); break;
+      case 'text': passed = (await locator.innerText()).includes(String(options.expected ?? '')); break;
+      case 'count': passed = (await locator.count()) === Number(options.expected); break;
+    }
+    if (!passed) throw new Error(`Assertion failed: ${options.assertion} for ${selector}`);
+    return { passed: true, selector };
+  }
+
+  async listFrames(): Promise<Array<{ index: number; name: string; url: string }>> {
+    return this.getActivePage().frames().map((frame, index) => ({ index, name: frame.name(), url: frame.url() }));
+  }
+
+  async inspectFrame(index: number): Promise<{ index: number; name: string; url: string; title: string }> {
+    const frame = this.getActivePage().frames()[index];
+    if (!frame) throw new Error(`Frame index ${index} not found.`);
+    return { index, name: frame.name(), url: frame.url(), title: await frame.title().catch(() => '') };
+  }
+
+  async setDialogAction(action: 'accept' | 'dismiss', promptText?: string): Promise<void> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    this.state.dialogAction = { action, promptText };
+  }
+
+  async getCookies(urls?: string[]): Promise<unknown[]> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    return this.state.context.cookies(urls);
+  }
+
+  async clearCookies(): Promise<void> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    await this.state.context.clearCookies();
+  }
+
+  async restoreStorageState(filepath: string, confirm = false): Promise<{ cookies: number }> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    if (!confirm) throw new Error('Restoring storage state changes the active browser session. Ask for confirmation first.');
+    const raw = JSON.parse(await readFile(filepath, 'utf-8')) as { cookies?: Array<Parameters<BrowserContext['addCookies']>[0][number]> };
+    const cookies = raw.cookies || [];
+    await this.state.context.addCookies(cookies);
+    return { cookies: cookies.length };
+  }
+
+  async saveStorageState(filename = `storage-${Date.now()}.json`): Promise<string> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filepath = join(configManager.get('browser.approvedDirectories.downloads') as string, safeFilename);
+    await this.state.context.storageState({ path: filepath });
+    return filepath;
+  }
+
+  async getConsoleMessages(): Promise<Array<{ type: string; text: string; timestamp: number }>> {
+    return [...(this.state?.consoleMessages || [])];
+  }
+
+  async getNetworkRequests(): Promise<Array<{ method: string; url: string; resourceType: string; timestamp: number }>> {
+    return [...(this.state?.networkRequests || [])];
+  }
+
+  async routeMock(options: { url: string; status?: number; contentType?: string; body?: string }): Promise<void> {
+    const page = this.getActivePage();
+    await page.route(options.url, route => route.fulfill({ status: options.status || 200, contentType: options.contentType || 'application/json', body: options.body || '{}' }));
+  }
+
+  async unrouteMock(url: string): Promise<void> {
+    await this.getActivePage().unroute(url);
+  }
+
+  async startTracing(): Promise<void> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    await this.state.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    this.state.tracing = true;
+  }
+
+  async stopTracing(filename = `trace-${Date.now()}.zip`): Promise<string> {
+    if (!this.state?.tracing) throw new Error('Tracing is not active.');
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filepath = join(configManager.get('browser.approvedDirectories.recordings') as string, safeFilename);
+    await this.state.context.tracing.stop({ path: filepath });
+    this.state.tracing = false;
+    return filepath;
+  }
+
+  async emulateMedia(options: { media?: 'screen' | 'print'; colorScheme?: 'light' | 'dark' | 'no-preference' }): Promise<void> {
+    await this.getActivePage().emulateMedia(options);
+  }
+
+  async runPageEvaluation(expression: string, confirmDangerous: boolean): Promise<unknown> {
+    if (!confirmDangerous) throw new Error('Page evaluation is blocked by default. Set confirmDangerous=true only for trusted code.');
+    if (expression.length > 10000) throw new Error('Page evaluation is limited to 10,000 characters.');
+    return this.getActivePage().evaluate(expression);
   }
 
   async navigate(options: NavigateOptions): Promise<PageSnapshot> {
@@ -432,9 +679,30 @@ export class BrowserAdapter extends EventEmitter {
     return null;
   }
 
+  async drag(source: string, target: string): Promise<void> {
+    await this.getActivePage().dragAndDrop(source, target);
+  }
+
+  async savePdf(filename = `page-${Date.now()}.pdf`): Promise<string> {
+    const page = this.getActivePage();
+    const config = configManager.getConfig();
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filepath = join(config.browser.approvedDirectories.downloads, safeFilename);
+    await page.pdf({ path: filepath, format: 'A4', printBackground: true });
+    return filepath;
+  }
+
+  async setViewportSize(width: number, height: number): Promise<void> {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+      throw new Error(`Invalid viewport size: ${width}x${height}`);
+    }
+    const page = this.getActivePage();
+    await page.setViewportSize({ width: Math.round(width), height: Math.round(height) });
+  }
+
   async click(options: ClickOptions): Promise<void> {
     const page = this.getActivePage();
-    await page.click(options.selector, {
+    await page.click(this.resolveSelector(options.selector), {
       button: options.button || 'left',
       clickCount: options.clickCount || 1,
       delay: options.delay,
@@ -449,15 +717,54 @@ export class BrowserAdapter extends EventEmitter {
 
   async hover(options: { selector: string }): Promise<void> {
     const page = this.getActivePage();
-    await page.hover(options.selector);
+    await page.hover(this.resolveSelector(options.selector));
+  }
+
+  async press(options: { selector: string; key: string }): Promise<void> {
+    const page = this.getActivePage();
+    await page.press(this.resolveSelector(options.selector), options.key);
+  }
+
+  async selectOption(options: { selector: string; value?: string; label?: string; index?: number }): Promise<void> {
+    const page = this.getActivePage();
+    const select = options.value !== undefined ? { value: options.value } : options.label !== undefined ? { label: options.label } : { index: options.index ?? 0 };
+    await page.selectOption(this.resolveSelector(options.selector), select);
+  }
+
+  async check(options: { selector: string; checked?: boolean }): Promise<void> {
+    const page = this.getActivePage();
+    const selector = this.resolveSelector(options.selector);
+    if (options.checked === false) await page.uncheck(selector);
+    else await page.check(selector);
+  }
+
+  async scroll(options: { selector?: string; x?: number; y?: number }): Promise<void> {
+    const page = this.getActivePage();
+    const x = Math.round(options.x || 0);
+    const y = Math.round(options.y || 0);
+    if (options.selector) {
+      await page.locator(this.resolveSelector(options.selector)).evaluate((element, offset) => element.scrollBy(offset.x, offset.y), { x, y });
+    } else {
+      await page.mouse.wheel(x, y);
+    }
+  }
+
+  async waitFor(options: { state?: 'load' | 'domcontentloaded' | 'networkidle'; timeout?: number; milliseconds?: number }): Promise<void> {
+    const page = this.getActivePage();
+    if (options.milliseconds !== undefined) {
+      const milliseconds = Math.min(Math.max(Math.round(options.milliseconds), 0), 30000);
+      await page.waitForTimeout(milliseconds);
+      return;
+    }
+    await page.waitForLoadState(options.state || 'domcontentloaded', { timeout: options.timeout || 30000 });
   }
 
   async fill(options: FillOptions): Promise<void> {
     const page = this.getActivePage();
     if (options.clearFirst) {
-      await page.fill(options.selector, '');
+      await page.fill(this.resolveSelector(options.selector), '');
     }
-    await page.fill(options.selector, options.value, { timeout: options.delay });
+    await page.fill(this.resolveSelector(options.selector), options.value, { timeout: options.delay });
 
     if (configManager.get('observation.screenshotOnStateChange')) {
       await this.captureScreenshot({ action: 'fill', requirement: `Filled ${options.selector}` });
