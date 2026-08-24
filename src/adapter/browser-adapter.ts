@@ -141,15 +141,13 @@ export class BrowserAdapter extends EventEmitter {
   }
 
   private async connectCDP(options: BrowserConnectOptions): Promise<BrowserStatus> {
-    if (!options.cdpEndpoint) {
-      throw new Error('CDP endpoint required for CDP mode');
-    }
+    const endpoint = options.cdpEndpoint || `http://localhost:${options.cdpPort || 9222}`;
 
     if (configManager.get('safety.blockUnrestrictedCdp')) {
       console.warn('Warning: Unrestricted CDP connections are blocked by safety policy. Use managed or extension mode instead.');
     }
 
-    const browser = await chromium.connectOverCDP(options.cdpEndpoint);
+    const browser = await chromium.connectOverCDP(endpoint);
     const contexts = browser.contexts();
     const context = contexts[0] || await browser.newContext();
 

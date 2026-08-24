@@ -1,21 +1,20 @@
 import { readdir, readFile, stat } from 'fs/promises';
+import { accessSync } from 'fs';
 import { join } from 'path';
+import { spawn, execSync } from 'child_process';
 import chalk from 'chalk';
 
 export interface ChromeProfile {
   name: string;
   directory: string;
   displayName?: string;
-  avatarPath?: string;
   isDefault: boolean;
   lastUsed?: number;
 }
 
-const CHROME_USER_DATA_DIR = join(
+const CHROME_USER_DATA = join(
   process.env['LOCALAPPDATA'] || '',
-  'Google',
-  'Chrome',
-  'User Data'
+  'Google', 'Chrome', 'User Data'
 );
 
 const CHROME_PATHS = [
@@ -24,56 +23,56 @@ const CHROME_PATHS = [
   join(process.env['LOCALAPPDATA'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
 ];
 
+// ── Chrome Detection ──────────────────────────────────────────────────────────
+
 export function getChromePath(): string | null {
   for (const p of CHROME_PATHS) {
     try {
-      require('fs').accessSync(p);
+      accessSync(p);
       return p;
     } catch {}
   }
   return null;
 }
 
+export function isChromeInstalled(): boolean {
+  return getChromePath() !== null;
+}
+
+// ── Profile Listing ───────────────────────────────────────────────────────────
+
 export async function listProfiles(): Promise<ChromeProfile[]> {
   const profiles: ChromeProfile[] = [];
 
   try {
-    const entries = await readdir(CHROME_USER_DATA_DIR);
+    const entries = await readdir(CHROME_USER_DATA);
 
     for (const entry of entries) {
-      const isProfileDir = entry === 'Default' || /^Profile \d+$/.test(entry);
-      if (!isProfileDir) continue;
+      if (entry !== 'Default' && !/^Profile \d+$/.test(entry)) continue;
 
-      const profilePath = join(CHROME_USER_DATA_DIR, entry);
-      const profileStats = await stat(profilePath);
-      if (!profileStats.isDirectory()) continue;
+      const profilePath = join(CHROME_USER_DATA, entry);
+      const s = await stat(profilePath);
+      if (!s.isDirectory()) continue;
 
       let displayName: string | undefined;
-      let avatarPath: string | undefined;
       let lastUsed: number | undefined;
 
       try {
-        const prefs = await readFile(join(profilePath, 'Preferences'), 'utf-8');
-        const prefsData = JSON.parse(prefs);
-        displayName = prefsData?.profile?.name;
-        avatarPath = prefsData?.profile?.avatar_icon;
-        lastUsed = prefsData?.profile?.last_used;
+        const prefs = JSON.parse(await readFile(join(profilePath, 'Preferences'), 'utf-8'));
+        displayName = prefs?.profile?.name;
+        lastUsed = prefs?.profile?.last_used ? Number(prefs.profile.last_used) : undefined;
       } catch {}
 
       profiles.push({
         name: entry,
         directory: profilePath,
         displayName: displayName || (entry === 'Default' ? 'Default' : entry),
-        avatarPath,
         isDefault: entry === 'Default',
-        lastUsed: lastUsed ? Number(lastUsed) : undefined
+        lastUsed
       });
     }
-  } catch (err) {
-    // Chrome not installed or no profiles
-  }
+  } catch {}
 
-  // Sort: Default first, then by last used
   profiles.sort((a, b) => {
     if (a.isDefault) return -1;
     if (b.isDefault) return 1;
@@ -88,62 +87,130 @@ export async function printProfiles(): Promise<void> {
 
   if (profiles.length === 0) {
     console.log(chalk.yellow('No Chrome profiles found.'));
-    console.log('Chrome may not be installed or has no profiles.');
     return;
   }
 
   console.log(chalk.bold('\nChrome Profiles:\n'));
-
-  for (const profile of profiles) {
-    const lastUsed = profile.lastUsed
-      ? new Date(profile.lastUsed).toLocaleDateString()
-      : 'never';
-
-    const marker = profile.isDefault ? chalk.green(' (default)') : '';
-    const last = chalk.dim(`last used: ${lastUsed}`);
-
-    console.log(`  ${chalk.cyan(profile.name)}${marker} - ${profile.displayName} ${last}`);
+  for (const p of profiles) {
+    const last = p.lastUsed ? new Date(p.lastUsed).toLocaleDateString() : 'never';
+    const tag = p.isDefault ? chalk.green(' (default)') : '';
+    console.log(`  ${chalk.cyan(p.name)}${tag}  ${chalk.dim(p.displayName)}  ${chalk.dim(`last: ${last}`)}`);
   }
-
-  console.log(chalk.bold('\nUsage:'));
-  console.log('  Use --profile flag with browser connect or mcp commands:');
-  console.log('  npx visual-browser-agent mcp --profile "Profile 1"');
 }
 
-export async function getProfileDirectory(profileName?: string): Promise<string> {
-  if (!profileName) return CHROME_USER_DATA_DIR;
+// ── Chrome Launch ─────────────────────────────────────────────────────────────
 
-  const profiles = await listProfiles();
-  const match = profiles.find(p => p.name === profileName || p.displayName === profileName);
-
-  if (!match) {
-    throw new Error(`Profile "${profileName}" not found. Run "visual-browser-agent profiles" to see available profiles.`);
-  }
-
-  return match.directory;
-}
-
-export function launchChromeWithProfile(
+/**
+ * Kill any Chrome using a debug port, then launch Chrome with profile.
+ * Returns the debug port.
+ */
+export async function launchChromeWithProfile(
   profileName: string,
   port: number = 9222,
-  urls: string[] = []
-): void {
+  urls: string[] = ['about:blank']
+): Promise<number> {
   const chromePath = getChromePath();
   if (!chromePath) {
-    throw new Error('Chrome not found. Install Chrome or use managed mode.');
+    throw new Error(
+      'Chrome not found.\n' +
+      'Install Chrome: https://www.google.com/chrome/\n' +
+      'Or use Chromium: npx visual-browser-agent init --mode managed'
+    );
   }
 
+  // Validate profile
+  const profiles = await listProfiles();
+  const profile = profiles.find(p => p.name === profileName);
+  if (!profile) {
+    throw new Error(
+      `Profile "${profileName}" not found.\n` +
+      'Run "visual-browser-agent profiles" to list available profiles.'
+    );
+  }
+
+  // Kill existing Chrome on this port if any
+  await killChromeOnPort(port);
+
+  // Launch Chrome
   const args = [
     `--remote-debugging-port=${port}`,
     `--profile-directory=${profileName}`,
     '--no-first-run',
-    '--no-default-browser-check'
+    '--no-default-browser-check',
+    ...urls
   ];
 
-  if (urls.length > 0) {
-    args.push(...urls);
-  }
+  const child = spawn(chromePath, args, {
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
 
-  const { execSync } = require('child_process');
-  execSync(`start "" "${chromePath}" ${args.join(' ')}`, { shell: true });
+  // Wait for debug port to open
+  await waitForPort(port, 15000);
+
+  console.log(chalk.green(`Chrome launched with profile "${profileName}" on port ${port}`));
+  return port;
+}
+
+/**
+ * Connect to an already-running Chrome with remote debugging.
+ */
+export async function connectToRunningChrome(port: number = 9222): Promise<boolean> {
+  try {
+    const res = await fetch(`http://localhost:${port}/json/version`);
+    if (res.ok) {
+      const data = await res.json() as { Browser?: string };
+      console.log(chalk.green(`Connected to Chrome on port ${port} (${data.Browser || 'unknown'})`));
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function killChromeOnPort(port: number): Promise<void> {
+  try {
+    // Find processes using the port
+    const output = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, {
+      encoding: 'utf-8',
+      timeout: 5000
+    }).trim();
+
+    if (!output) return;
+
+    // Extract PIDs and kill them
+    const pids = [...new Set(output.split('\n').map(line => line.trim().split(/\s+/).pop()).filter(Boolean))];
+    for (const pid of pids) {
+      try {
+        execSync(`taskkill /PID ${pid} /F`, { timeout: 5000, stdio: 'ignore' });
+      } catch {}
+    }
+
+    // Wait for port to free up
+    await new Promise(r => setTimeout(r, 1000));
+  } catch {}
+}
+
+async function waitForPort(port: number, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://localhost:${port}/json/version`);
+      if (res.ok) return;
+    } catch {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+  throw new Error(`Chrome did not start on port ${port} within ${timeoutMs}ms`);
+}
+
+export async function getDebugPort(): Promise<number | null> {
+  for (const port of [9222, 9223, 9224, 9225]) {
+    try {
+      const res = await fetch(`http://localhost:${port}/json/version`);
+      if (res.ok) return port;
+    } catch {}
+  }
+  return null;
 }

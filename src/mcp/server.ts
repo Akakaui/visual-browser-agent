@@ -22,10 +22,7 @@ Safety: Public submissions blocked by default. Unrestricted CDP blocked. Filesys
 Secrets redacted from logs.`;
 
 interface MCPServerOptions {
-  port?: number;
-  browserMode?: 'managed' | 'extension' | 'cdp';
-  profile?: string;
-  cdpEndpoint?: string;
+  cdpPort?: number;
 }
 
 export async function startMCPServer(httpPort?: number, options?: MCPServerOptions): Promise<void> {
@@ -414,16 +411,13 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
     console.error('Visual Browser Agent MCP server started (stdio)');
   }
 
-  // Auto-connect browser on startup if options provided
-  if (options?.browserMode) {
+  // Auto-connect browser on startup if CDP port provided
+  if (options?.cdpPort) {
     try {
-      const connectOptions: any = { mode: options.browserMode };
-      if (options.profile) connectOptions.profile = options.profile;
-      if (options.cdpEndpoint) connectOptions.cdpEndpoint = options.cdpEndpoint;
-      await browserAdapter.connect(connectOptions);
-      console.error(`Browser connected (${options.browserMode} mode${options.profile ? `, profile: ${options.profile}` : ''})`);
+      await browserAdapter.connect({ mode: 'cdp', cdpPort: options.cdpPort });
+      console.error(`Chrome connected on port ${options.cdpPort}`);
     } catch (err) {
-      console.error(`Browser auto-connect failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`Chrome auto-connect failed: ${err instanceof Error ? err.message : String(err)}`);
       console.error('You can connect manually using the browser_connect tool.');
     }
   }

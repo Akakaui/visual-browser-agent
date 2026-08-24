@@ -96,6 +96,7 @@ export interface InspectOptions {
 export interface BrowserConnectOptions {
   mode: 'extension' | 'managed' | 'cdp';
   cdpEndpoint?: string;
+  cdpPort?: number;
   extensionPort?: number;
   profile?: string;
   headless?: boolean;
