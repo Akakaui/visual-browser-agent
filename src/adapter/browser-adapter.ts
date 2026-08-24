@@ -69,10 +69,25 @@ export class BrowserAdapter extends EventEmitter {
       ]
     };
 
+    // Handle profile: named profiles get isolated user-data-dirs
     if (options.profile && options.profile !== 'default') {
-      const userDataDir = join(process.cwd(), 'browser-profiles', options.profile);
-      await mkdir(userDataDir, { recursive: true });
-      launchOptions.args.push(`--user-data-dir=${userDataDir}`);
+      // Check if this is a Chrome profile (Default, Profile 1, etc.)
+      const isChromeProfile = options.profile === 'Default' || /^Profile \d+$/.test(options.profile);
+
+      if (isChromeProfile) {
+        // Use Chrome's actual user data directory for existing profiles
+        const chromeUserData = join(
+          process.env['LOCALAPPDATA'] || '',
+          'Google', 'Chrome', 'User Data'
+        );
+        launchOptions.args.push(`--user-data-dir=${chromeUserData}`);
+        launchOptions.args.push(`--profile-directory=${options.profile}`);
+      } else {
+        // Custom named profile gets isolated directory
+        const userDataDir = join(process.cwd(), 'browser-profiles', options.profile);
+        await mkdir(userDataDir, { recursive: true });
+        launchOptions.args.push(`--user-data-dir=${userDataDir}`);
+      }
     }
 
     const browser = await chromium.launch(launchOptions);

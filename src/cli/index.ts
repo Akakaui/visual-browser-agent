@@ -97,12 +97,29 @@ program
   });
 
 program
+  .command('profiles')
+  .description('List available Chrome profiles')
+  .action(async () => {
+    const { printProfiles } = await import('../cli/profiles.js');
+    await printProfiles();
+  });
+
+program
   .command('mcp')
   .description('Start MCP server (stdio)')
   .option('--port <port>', 'Port for Streamable HTTP (optional)')
+  .option('--mode <mode>', 'Browser mode: managed | extension | cdp', 'managed')
+  .option('--profile <profile>', 'Chrome profile name (for extension mode)')
+  .option('--cdp-endpoint <url>', 'CDP endpoint URL (for cdp mode)')
   .action(async (options) => {
     const { startMCPServer } = await import('../mcp/server.js');
-    await startMCPServer(options.port ? parseInt(options.port) : undefined);
+    const mcpOptions = {
+      port: options.port ? parseInt(options.port) : undefined,
+      browserMode: options.mode,
+      profile: options.profile,
+      cdpEndpoint: options.cdpEndpoint
+    };
+    await startMCPServer(mcpOptions.port, mcpOptions);
   });
 
 program

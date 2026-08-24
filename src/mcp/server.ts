@@ -21,7 +21,14 @@ Tools are organized by risk level:
 Safety: Public submissions blocked by default. Unrestricted CDP blocked. Filesystem restricted to approved directories.
 Secrets redacted from logs.`;
 
-export async function startMCPServer(httpPort?: number): Promise<void> {
+interface MCPServerOptions {
+  port?: number;
+  browserMode?: 'managed' | 'extension' | 'cdp';
+  profile?: string;
+  cdpEndpoint?: string;
+}
+
+export async function startMCPServer(httpPort?: number, options?: MCPServerOptions): Promise<void> {
   const server = new Server(
     {
       name: 'visual-browser-agent',
@@ -405,6 +412,20 @@ export async function startMCPServer(httpPort?: number): Promise<void> {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('Visual Browser Agent MCP server started (stdio)');
+  }
+
+  // Auto-connect browser on startup if options provided
+  if (options?.browserMode) {
+    try {
+      const connectOptions: any = { mode: options.browserMode };
+      if (options.profile) connectOptions.profile = options.profile;
+      if (options.cdpEndpoint) connectOptions.cdpEndpoint = options.cdpEndpoint;
+      await browserAdapter.connect(connectOptions);
+      console.error(`Browser connected (${options.browserMode} mode${options.profile ? `, profile: ${options.profile}` : ''})`);
+    } catch (err) {
+      console.error(`Browser auto-connect failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('You can connect manually using the browser_connect tool.');
+    }
   }
 }
 
