@@ -27,8 +27,16 @@
     "visual-testing",
     "agent-skills"
   ],
-  "author": "",
+  "author": "Akakaui",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Akakaui/visual-browser-agent.git"
+  },
+  "homepage": "https://github.com/Akakaui/visual-browser-agent#readme",
+  "bugs": {
+    "url": "https://github.com/Akakaui/visual-browser-agent/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   },

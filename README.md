@@ -252,10 +252,17 @@ npx visual-browser-agent mcp --choose-profile
 | `npx visual-browser-agent mcp --extension` | Start MCP server with Chrome extension |
 | `npx visual-browser-agent profiles` | List Chrome profiles |
 | `npx visual-browser-agent doctor` | Check environment |
+| `npx visual-browser-agent dashboard` | Open the local user control panel |
 | `npx visual-browser-agent host <agent>` | Install for specific coding agent |
 | `npx visual-browser-agent skill list` | List available skills |
 
 ---
+
+## Normal-user control panel
+
+For a non-technical user, the browser agent should be installed and registered once by an administrator or coding-agent setup. The user then works from the coding agent by saying “use the browser to open this website,” “use my Work account,” or “check the page and show me screenshots.” The agent handles connection, identity discovery, evidence, and approvals through MCP.
+
+The optional local control panel is available for connection visibility and recovery. A technical user can launch it with `npx visual-browser-agent dashboard`; it opens at `http://127.0.0.1:8787/` and shows connection health, friendly Chrome identities, the active tab, and recent evidence. The panel is local-only and does not replace the coding-agent conversation.
 
 ## Playwright 2.0 compatibility surface
 
@@ -350,7 +357,7 @@ For a user who needs existing login cookies, the extension route is usually the 
 
 ### Selecting the browser agent by prompting
 
-The user normally selects the **browser mode**, not a separate specialist model. The coding agent chooses the Visual Browser Agent MCP tools after the integration is installed. Prompts should name the session requirement when it matters:
+The user normally selects the **task**, not a browser mode or specialist model. Say “use the browser to …” in Claude, Cursor, Copilot, Codex, Gemini, Windsurf, Cline, Roo, Kiro, Goose, OpenCode, Antigravity, or another MCP-capable coding agent. The wrapper tells the agent to use automatic browser selection, discover visible Chrome identities when necessary, and fall back to managed Chromium when no existing session is available. The coding agent chooses the Visual Browser Agent MCP tools after the integration is installed. Prompts should name the session requirement when it matters:
 
 ```text
 Use a clean Chromium browser. Audit this public website at desktop and mobile widths and save visual evidence.

@@ -67,6 +67,16 @@ program
     }
   });
 
+// Local user control panel
+program
+  .command('dashboard')
+  .description('Start the local browser control panel')
+  .option('--port <port>', 'Dashboard port', '8787')
+  .action(async (options) => {
+    const { startDashboard } = await import('../dashboard/server.js');
+    await startDashboard(parseInt(options.port, 10));
+  });
+
 // First-run setup wizard
 program
   .command('setup')

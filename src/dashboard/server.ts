@@ -1,0 +1,31 @@
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import { readdir, readFile } from 'fs/promises';
+import { join, extname } from 'path';
+import { configManager } from '../config/index.js';
+import { browserAdapter } from '../adapter/browser-adapter.js';
+import { getChromePath, getDebugPort, listProfiles } from '../cli/profiles.js';
+
+const DASHBOARD_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Visual Browser Agent</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:1100px;margin:0 auto;padding:32px;background:#f5f7fb;color:#162033}header{display:flex;justify-content:space-between;align-items:center;gap:20px}h1{margin:0}.sub{color:#64748b}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:24px 0}.card{background:white;border:1px solid #dbe3ef;border-radius:14px;padding:18px;box-shadow:0 6px 20px #0f172a0d}.value{font-size:1.25rem;font-weight:700;margin-top:8px}.pill{display:inline-block;padding:4px 9px;border-radius:99px;background:#dcfce7;color:#166534;font-size:.8rem}.profile{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #eef2f7}.profile:last-child{border-bottom:0}button{border:0;border-radius:9px;padding:9px 13px;background:#2563eb;color:white;cursor:pointer}button.secondary{background:#e2e8f0;color:#1e293b}code{background:#eef2ff;padding:2px 5px;border-radius:5px}@media(max-width:650px){body{padding:18px}header{align-items:flex-start;flex-direction:column}}</style></head>
+<body><header><div><h1>Visual Browser Agent</h1><p class="sub">Choose a browser in plain language. Your coding agent can use this panel for status and evidence.</p></div><button onclick="refresh()">Refresh</button></header>
+<div class="grid"><section class="card"><div class="sub">Connection</div><div id="connection" class="value">Loading…</div><p id="active" class="sub"></p></section><section class="card"><div class="sub">Browser choice</div><div id="mode" class="value">Automatic</div><p class="sub">Say “use the browser” in your coding agent.</p></section><section class="card"><div class="sub">Chrome health</div><div id="chrome" class="value">Loading…</div><p id="debug" class="sub"></p></section></div>
+<section class="card"><h2>Signed-in Chrome identities</h2><p class="sub">These are the friendly names your agent can understand. You do not need to know technical profile names.</p><div id="profiles">Loading…</div></section>
+<section class="card" style="margin-top:16px"><h2>Recent evidence</h2><div id="evidence">Loading…</div></section>
+<script>async function get(url){const r=await fetch(url);return r.json()}async function refresh(){const [s,p,e]=await Promise.all([get('/api/status'),get('/api/profiles'),get('/api/evidence')]);document.querySelector('#connection').innerHTML=s.connected?'<span class="pill">Connected</span>':'Not connected';document.querySelector('#active').textContent=s.activeTab?'Active tab: '+s.activeTab.title+' — '+s.activeTab.url:'No active tab';document.querySelector('#mode').textContent=s.mode||'Automatic';document.querySelector('#chrome').textContent=s.chromePath?'Available':'Not detected';document.querySelector('#debug').textContent=s.debugPort?'Existing session detected on port '+s.debugPort:'No existing debug session';document.querySelector('#profiles').innerHTML=p.length?p.map(x=>'<div class="profile"><strong>'+esc(x.name||x.technicalName)+'</strong><span>'+(x.email||'No account email')+'</span></div>').join(''):'<p class="sub">No Chrome profiles found. You can still use clean Chromium.</p>';document.querySelector('#evidence').innerHTML=e.length?e.map(x=>'<div class="profile"><code>'+esc(x.name)+'</code><span>'+x.kind+'</span></div>').join(''):'<p class="sub">No evidence captured yet.</p>'}function esc(s){return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}refresh();setInterval(refresh,10000)</script></body></html>`;
+
+function json(res: ServerResponse, value: unknown, status = 200) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); }
+
+export async function startDashboard(port = 8787): Promise<void> {
+  await configManager.load();
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      if (req.url === '/' || req.url === '/index.html') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(DASHBOARD_HTML); return; }
+      if (req.url === '/api/status') { json(res, { ...(await browserAdapter.getStatus()), chromePath: getChromePath(), debugPort: await getDebugPort() }); return; }
+      if (req.url === '/api/profiles') { json(res, (await listProfiles()).map(p => ({ name: p.displayName || p.name, email: p.accountEmail, technicalName: p.name, default: p.isDefault }))); return; }
+      if (req.url === '/api/evidence') { const dir = configManager.get('browser.approvedDirectories.screenshots') as string; const names = await readdir(dir).catch(() => []); json(res, names.slice(-30).reverse().map(name => ({ name, kind: extname(name).slice(1) || 'artifact' }))); return; }
+      json(res, { error: 'Not found' }, 404);
+    } catch (error) { json(res, { error: error instanceof Error ? error.message : String(error) }, 500); }
+  });
+  server.listen(port, '127.0.0.1', () => console.log(`Visual Browser Agent control panel: http://127.0.0.1:${port}`));
+}
