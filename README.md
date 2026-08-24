@@ -18,17 +18,92 @@ There are **two browsers** and **two connection methods**:
 
 ---
 
-## Quick Start (Chromium - Default)
+## Installation
+
+### Option 1: From GitHub (Recommended for Testing)
 
 ```bash
-# 1. Initialize (installs Chromium + MCP + skills)
-npx visual-browser-agent init
+# Clone the repo
+git clone https://github.com/Akakaui/visual-browser-agent.git
+cd visual-browser-agent
 
-# 2. Start using with your AI agent
-npx visual-browser-agent mcp
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Initialize (installs Chromium + MCP + skills)
+npx visual-browser-agent init
 ```
 
-That's it. Your AI agent can now see and control the browser.
+Or use directly with npx:
+
+```bash
+npx github:Akakaui/visual-browser-agent init
+```
+
+### Option 2: From npm (After Publishing)
+
+```bash
+# Install globally
+npm install -g visual-browser-agent
+
+# Or use directly with npx
+npx visual-browser-agent init
+```
+
+### Option 3: Local Development
+
+```bash
+# Clone the repo
+git clone https://github.com/Akakaui/visual-browser-agent.git
+cd visual-browser-agent
+
+# Install in development mode
+npm install
+
+# Build
+npm run build
+
+# Link for global use
+npm link
+
+# Now you can use it anywhere
+visual-browser-agent init
+```
+
+---
+
+## Quick Start
+
+### 1. Initialize
+
+```bash
+npx visual-browser-agent init
+```
+
+This will:
+- Install Chromium (Playwright browser)
+- Set up MCP configuration
+- Install Agent Skills
+- Auto-detect your coding agent and install the wrapper
+
+### 2. Start Using
+
+```bash
+# Start MCP server with Chromium (default)
+npx visual-browser-agent mcp
+
+# Or start with Chrome extension
+npx visual-browser-agent mcp --extension
+```
+
+### 3. Use in Your AI Agent
+
+Ask your agent: "Research this website's design"
+
+The agent will use the Visual Browser Agent to control the browser.
 
 ---
 
@@ -57,55 +132,80 @@ The agent connects to **your Chrome** with all your logins intact.
 
 ---
 
-## Connection Methods Explained
+## Integration with AI Agents
 
-### MCP (for AI Agents)
+### Auto-Detection (Recommended)
 
-MCP (Model Context Protocol) is how AI agents talk to tools. The Visual Browser Agent runs as an MCP server.
+When you run `npx visual-browser-agent init`, it automatically:
+- Detects which coding agent you're using
+- Installs the appropriate wrapper
+- Sets up MCP configuration
 
-**Default behavior:**
-- Starts Chromium (Playwright's browser)
-- Agent controls it via MCP
-- Works with Claude Code, Cursor, Gemini, etc.
+### Manual Installation
 
-**When to use:** Most AI agent tasks.
+If auto-detection doesn't work, you can install manually:
 
-**Example:**
 ```bash
-npx visual-browser-agent mcp
+# Install for specific agent
+npx visual-browser-agent host <agent-name>
 ```
 
-### Extension (for Existing Chrome)
+Supported agents:
+- `claude-code`
+- `cursor`
+- `gemini`
+- `opencode`
+- `antigravity`
+- `windsurf`
+- `cline`
+- `roo`
+- `kiro`
+- `copilot`
+- `codex`
+- `goose`
 
-The Chrome extension bridges your existing Chrome to the agent.
+### Claude Code
 
-**Default behavior:**
-- Connects to your running Chrome
-- Uses your existing profiles, logins, cookies
-- No need to sign in again
+Add to `.claude/settings.json`:
 
-**When to use:** When the agent needs your existing logins.
-
-**Example:**
-```bash
-npx visual-browser-agent mcp --extension
+```json
+{
+  "mcpServers": {
+    "visual-browser": {
+      "command": "npx",
+      "args": ["visual-browser-agent", "mcp"]
+    }
+  }
+}
 ```
 
----
+### Cursor
 
-## Why Two Browsers?
+Add to `.cursor/mcp.json`:
 
-### Chromium (Default)
+```json
+{
+  "mcpServers": {
+    "visual-browser": {
+      "command": "npx",
+      "args": ["visual-browser-agent", "mcp"]
+    }
+  }
+}
+```
 
-- **Pros:** Works everywhere, no setup, fresh state each time
-- **Cons:** No existing logins, need to sign in to everything
-- **Use for:** Public websites, research, design inspection
+### For Chrome Extension Mode
 
-### Chrome (Extension)
-
-- **Pros:** All your existing logins, cookies, bookmarks, extensions
-- **Cons:** Requires Chrome installed, needs extension setup
-- **Use for:** Tasks requiring authentication (Gmail, social media, banking, etc.)
+```json
+{
+  "mcpServers": {
+    "visual-browser": {
+      "command": "npx",
+      "args": ["visual-browser-agent", "mcp", "--extension"]
+    }
+  }
+}
+```
 
 ---
 
@@ -152,6 +252,7 @@ npx visual-browser-agent mcp --extension --profile "Profile 3"
 | `npx visual-browser-agent mcp --extension` | Start MCP server with Chrome extension |
 | `npx visual-browser-agent profiles` | List Chrome profiles |
 | `npx visual-browser-agent doctor` | Check environment |
+| `npx visual-browser-agent host <agent>` | Install for specific coding agent |
 | `npx visual-browser-agent skill list` | List available skills |
 
 ---
@@ -166,81 +267,6 @@ npx visual-browser-agent profiles
 
 # Use specific profile with extension
 npx visual-browser-agent mcp --extension --profile "Work"
-```
-
----
-
-## Installation
-
-### Prerequisites
-
-- Node.js 18+
-- Chrome (optional, for extension mode)
-
-### Install
-
-```bash
-npm install visual-browser-agent
-```
-
-Or use directly:
-
-```bash
-npx visual-browser-agent init
-```
-
-### What `init` does
-
-1. Installs Chromium (Playwright browser)
-2. Installs MCP server configuration
-3. Installs Agent Skills
-4. Creates config file
-
----
-
-## Integration with AI Agents
-
-### Claude Code
-
-Add to `.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "visual-browser": {
-      "command": "npx",
-      "args": ["visual-browser-agent", "mcp"]
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "visual-browser": {
-      "command": "npx",
-      "args": ["visual-browser-agent", "mcp"]
-    }
-  }
-}
-```
-
-### For Chrome Extension Mode
-
-```json
-{
-  "mcpServers": {
-    "visual-browser": {
-      "command": "npx",
-      "args": ["visual-browser-agent", "mcp", "--extension"]
-    }
-  }
-}
 ```
 
 ---
