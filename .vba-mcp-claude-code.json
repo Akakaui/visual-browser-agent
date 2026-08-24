@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "visual-browser": {
+      "command": "npx",
+      "args": [
+        "visual-browser-agent",
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

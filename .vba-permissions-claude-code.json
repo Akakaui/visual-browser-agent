@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp(visual-browser/inspect_page)",
+      "mcp(visual-browser/capture_screenshot)"
+    ],
+    "ask": [
+      "mcp(visual-browser/navigate)",
+      "mcp(visual-browser/click)",
+      "mcp(visual-browser/fill)",
+      "mcp(visual-browser/upload_file)",
+      "mcp(visual-browser/download_file)"
+    ],
+    "deny": [
+      "mcp(visual-browser/submit_public_action)"
+    ]
+  }
+}
