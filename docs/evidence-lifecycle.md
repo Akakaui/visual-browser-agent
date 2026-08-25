@@ -26,6 +26,8 @@ The specialist should choose evidence based on the task:
 
 The browser specialist should not decide whether the final result is a CSV, table, JSON file, Markdown report, or host artifact. It returns structured browser observations and evidence references. The primary agent uses its own file, shell, media, and artifact tools for final presentation or processing.
 
+The specialist chooses evidence adaptively. It should not capture video automatically when a screenshot or structured inspection is sufficient. Use 4 FPS for a lightweight storyboard/contact sheet, 15 FPS for normal motion review, 30 FPS for detailed UI animation, and 60 FPS for high-speed analysis when the source recording actually contains 60 FPS. Extracting at 60 FPS from a 25 or 30 FPS source only duplicates frames; it does not create new temporal information. Truly frame-accurate high-speed study requires the browser capture itself to run at that rate or requires event-timed screenshots.
+
 ## Run workspace
 
 Every evidence run has a persistent workspace:
@@ -64,7 +66,7 @@ logs/page-state.json
 
 The page-state log contains the final DOM and accessibility snapshot when available. Evidence events record the current URL, artifact references, console count, network count, and the fact that DOM/accessibility capture was attempted.
 
-Screenshots are returned as MCP image content where supported. Videos, PDFs, and traces are returned as artifact metadata and local paths. The primary host can process those files with its own tools. For example, FFmpeg can trim or transcode a returned WebM recording:
+Screenshots are returned as MCP image content where supported. Videos, PDFs, and traces are returned as artifact metadata and local paths. The browser specialist can process those files with its own MCP media tools before handing back the distilled result. The primary host can still process the final evidence package with its own tools when necessary. For example, FFmpeg can trim or transcode a returned WebM recording:
 
 ```bash
 ffmpeg -i .design/browser/runs/<run-id>/videos/recording.webm \
