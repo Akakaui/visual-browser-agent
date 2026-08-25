@@ -7,7 +7,7 @@ import {
   InitializeRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { browserAdapter } from '../adapter/browser-adapter.js';
-import { evidenceWorkspace } from '../evidence/index.js';
+import { evidenceWorkspace, processVideo, probeMedia } from '../evidence/index.js';
 import { retentionManager } from '../retention/manager.js';
 
 const SERVER_INSTRUCTIONS = `Visual Browser Agent - Enhanced MCP Server
@@ -77,6 +77,16 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         name: 'evidence_cleanup',
         description: 'Delete expired registered evidence according to the configured retention policy',
         inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'process_video_evidence',
+        description: 'Process a browser recording inside the approved evidence workspace using FFmpeg: clip, frames, thumbnail, or contact sheet',
+        inputSchema: { type: 'object', properties: { sourcePath: { type: 'string' }, operation: { type: 'string', enum: ['clip', 'frames', 'thumbnail', 'contact-sheet'] }, outputPath: { type: 'string' }, startSeconds: { type: 'number' }, durationSeconds: { type: 'number' }, fps: { type: 'number' }, tile: { type: 'string' } }, required: ['sourcePath', 'operation'] }
+      },
+      {
+        name: 'probe_media_evidence',
+        description: 'Inspect approved screenshot/video/PDF/media metadata using ffprobe where available',
+        inputSchema: { type: 'object', properties: { sourcePath: { type: 'string' } }, required: ['sourcePath'] }
       },
       {
         name: 'browser_status',
@@ -557,6 +567,28 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
         case 'evidence_cleanup': {
           const deleted = await retentionManager.cleanup();
           return { content: [{ type: 'text', text: JSON.stringify({ deleted }, null, 2) }] };
+        }
+
+        case 'process_video_evidence': {
+          const result = await processVideo({
+            sourcePath: String((args as any)?.sourcePath),
+            operation: (args as any)?.operation,
+            outputPath: (args as any)?.outputPath,
+            startSeconds: (args as any)?.startSeconds,
+            durationSeconds: (args as any)?.durationSeconds,
+            fps: (args as any)?.fps,
+            tile: (args as any)?.tile
+          });
+          const runId = browserAdapter.getRunContext()?.runId;
+          if (runId) {
+            await evidenceWorkspace.registerArtifact({ runId, kind: result.operation === 'clip' ? 'recording' : 'thumbnail', path: result.outputPath, metadata: result.metadata });
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        case 'probe_media_evidence': {
+          const result = await probeMedia(String((args as any)?.sourcePath));
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
         case 'browser_status': {

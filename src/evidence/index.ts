@@ -1,3 +1,5 @@
+export { processVideo, probeMedia, type MediaOperation } from './media.js';
+
 export {
   EvidenceWorkspace,
   evidenceWorkspace,
