@@ -261,17 +261,6 @@ export class HostManager {
     await writeFile(dest, template, 'utf-8');
     console.log(chalk.green(`  Browser specialist: ${dest}`));
 
-    if (host === 'opencode') {
-      const primaryPath = join(PACKAGE_ROOT, 'wrappers', 'opencode', 'visual-browser-agent.md');
-      try {
-        const primaryTemplate = await readFile(primaryPath, 'utf-8');
-        const primaryDest = join(destDir, 'visual-browser-agent.md');
-        await writeFile(primaryDest, primaryTemplate, 'utf-8');
-        console.log(chalk.green(`  Primary browser agent: ${primaryDest}`));
-      } catch {
-        console.log(chalk.yellow(`  Primary browser agent template missing: ${primaryPath}`));
-      }
-    }
   }
 
   private async generateSkillInstallScript(host: string): Promise<void> {
