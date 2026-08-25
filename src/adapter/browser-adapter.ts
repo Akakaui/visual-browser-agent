@@ -1,7 +1,7 @@
 import { Browser, BrowserContext, Page, CDPSession, chromium } from 'playwright';
 import { EventEmitter } from 'events';
 import { join } from 'path';
-import { mkdir, readdir, stat, readFile } from 'fs/promises';
+import { mkdir, readdir, stat, readFile, rename, writeFile } from 'fs/promises';
 import {
   PageSnapshot,
   ScreenshotResult,
@@ -19,6 +19,11 @@ import {
   RunContext
 } from './types.js';
 import { configManager } from '../config/index.js';
+import { evidenceWorkspace } from '../evidence/index.js';
+
+function runRoot(runId: string, kind: string): string {
+  return join(configManager.get('browser.approvedDirectories.evidence') as string, runId, kind);
+}
 
 interface ManagedBrowserState {
   browser: Browser;
@@ -424,9 +429,13 @@ export class BrowserAdapter extends EventEmitter {
 
   async saveStorageState(filename = `storage-${Date.now()}.json`): Promise<string> {
     if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    const run = await this.ensureEvidenceRun('Storage state capture');
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filepath = join(configManager.get('browser.approvedDirectories.downloads') as string, safeFilename);
+    const directory = runRoot(run.runId, 'logs');
+    await mkdir(directory, { recursive: true });
+    const filepath = join(directory, safeFilename);
     await this.state.context.storageState({ path: filepath });
+    await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'storage-state', path: filepath, sourceUrls: [this.getActivePage().url()], sensitive: true });
     return filepath;
   }
 
@@ -455,10 +464,14 @@ export class BrowserAdapter extends EventEmitter {
 
   async stopTracing(filename = `trace-${Date.now()}.zip`): Promise<string> {
     if (!this.state?.tracing) throw new Error('Tracing is not active.');
+    const run = await this.ensureEvidenceRun('Browser trace');
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filepath = join(configManager.get('browser.approvedDirectories.recordings') as string, safeFilename);
+    const directory = runRoot(run.runId, 'traces');
+    await mkdir(directory, { recursive: true });
+    const filepath = join(directory, safeFilename);
     await this.state.context.tracing.stop({ path: filepath });
     this.state.tracing = false;
+    await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'trace', path: filepath, sourceUrls: [this.getActivePage().url()] });
     return filepath;
   }
 
@@ -587,9 +600,11 @@ export class BrowserAdapter extends EventEmitter {
   async captureScreenshot(options: { action: string; requirement?: string; selector?: string; fullPage?: boolean }): Promise<ScreenshotResult> {
     const page = this.getActivePage();
     const config = configManager.getConfig();
+    const run = await this.ensureEvidenceRun(`Screenshot: ${options.action}`);
     const timestamp = Date.now();
     const filename = `screenshot-${timestamp}.png`;
-    const filepath = join(config.browser.approvedDirectories.screenshots, filename);
+    const filepath = join(runRoot(run.runId, 'screenshots'), filename);
+    await mkdir(runRoot(run.runId, 'screenshots'), { recursive: true });
 
     const screenshotOptions: any = { path: filepath, fullPage: options.fullPage ?? false };
     if (options.selector) {
@@ -614,6 +629,8 @@ export class BrowserAdapter extends EventEmitter {
       requirement: options.requirement
     };
 
+    await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'screenshot', path: filepath, sourceUrls: [page.url()], action: options.action, requirement: options.requirement, metadata: { width, height, fullPage: options.fullPage ?? false } });
+    await this.addEvidence({ eventId: await this.generateEventId(), action: options.action, requirement: options.requirement || options.action, artifacts: [filepath], review: { passed: true, confidence: 1, findings: [] }, nextDecision: 'continue' });
     this.emit('screenshot', result);
     return result;
   }
@@ -621,19 +638,18 @@ export class BrowserAdapter extends EventEmitter {
   async startRecording(options: { action: string; requirement?: string }): Promise<void> {
     if (!this.state) throw new Error('Browser not connected');
 
-    const config = configManager.getConfig();
     const page = this.state.defaultPage;
-
     const timestamp = Date.now();
-    const filename = `recording-${timestamp}.webm`;
-    const filepath = join(config.browser.approvedDirectories.recordings, filename);
+    const expectedPath = join(configManager.get('browser.approvedDirectories.recordings') as string, `recording-${timestamp}.webm`);
 
-    // Playwright records video per-context (configured at context creation).
+    // Playwright records video per-context (configured at context creation). The
+    // start call marks the active page; stopRecording moves the flushed file into
+    // the active run workspace and registers it.
     // Mark the recording window; the video file is flushed on page close.
     this.state.recordingPage = page;
     this.recordingStartedAt = timestamp;
 
-    this.emit('recordingStarted', { path: filepath, action: options.action, requirement: options.requirement });
+    this.emit('recordingStarted', { path: expectedPath, action: options.action, requirement: options.requirement });
   }
 
   async stopRecording(): Promise<RecordingResult | null> {
@@ -642,16 +658,29 @@ export class BrowserAdapter extends EventEmitter {
     const page = this.state.recordingPage;
     const config = configManager.getConfig();
     const startedAt = this.recordingStartedAt ?? Date.now();
+    const sourceUrl = page.url();
     this.recordingStartedAt = undefined;
 
     // Flush the context video by closing the tracked page.
     await page.close().catch(() => undefined);
 
-    const finalPath = await this.findNewestRecording(config.browser.approvedDirectories.recordings);
+    const finalPath = await this.findNewestRecording(config.browser.approvedDirectories.recordings, startedAt);
 
     if (finalPath) {
+      const run = await this.ensureEvidenceRun('Browser interaction recording');
+      const videoDir = runRoot(run.runId, 'videos');
+      await mkdir(videoDir, { recursive: true });
+      const finalRunPath = join(videoDir, `recording-${Date.now()}.webm`);
+      let evidencePath = finalPath;
+      try {
+        await rename(finalPath, finalRunPath);
+        evidencePath = finalRunPath;
+      } catch {
+        // Keep the flushed Playwright path if a cross-device move is unavailable.
+      }
+      await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'recording', path: evidencePath, sourceUrls: [sourceUrl], metadata: { durationSeconds: Math.round((Date.now() - startedAt) / 1000) } });
       const result: RecordingResult = {
-        path: finalPath,
+        path: evidencePath,
         duration: Math.round((Date.now() - startedAt) / 1000),
         width: page.viewportSize()?.width || 1280,
         height: page.viewportSize()?.height || 720,
@@ -675,10 +704,13 @@ export class BrowserAdapter extends EventEmitter {
 
   async savePdf(filename = `page-${Date.now()}.pdf`): Promise<string> {
     const page = this.getActivePage();
-    const config = configManager.getConfig();
+    const run = await this.ensureEvidenceRun('PDF evidence');
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filepath = join(config.browser.approvedDirectories.downloads, safeFilename);
+    const directory = runRoot(run.runId, 'pdfs');
+    await mkdir(directory, { recursive: true });
+    const filepath = join(directory, safeFilename);
     await page.pdf({ path: filepath, format: 'A4', printBackground: true });
+    await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'pdf', path: filepath, sourceUrls: [page.url()] });
     return filepath;
   }
 
@@ -786,15 +818,18 @@ export class BrowserAdapter extends EventEmitter {
     const filepath = join(config.browser.approvedDirectories.downloads, filename);
 
     await download.saveAs(filepath);
+    const run = await this.ensureEvidenceRun('Browser download');
+    await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'download', path: filepath, sourceUrls: [page.url()], metadata: { suggestedName } });
     return filepath;
   }
 
   async createRunContext(goal: string, requirements: string[]): Promise<RunContext> {
+    const manifest = await evidenceWorkspace.startRun(goal, requirements);
     const runContext: RunContext = {
-      runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      startTime: Date.now(),
-      goal,
-      requirements,
+      runId: manifest.runId,
+      startTime: manifest.startedAt,
+      goal: manifest.goal,
+      requirements: manifest.requirements,
       evidence: [],
       currentUrl: '',
       currentAction: ''
@@ -807,14 +842,62 @@ export class BrowserAdapter extends EventEmitter {
     return runContext;
   }
 
-  addEvidence(manifest: EvidenceManifest): void {
+  async addEvidence(manifest: EvidenceManifest): Promise<void> {
     if (this.state?.runContext) {
       this.state.runContext.evidence.push(manifest);
+      await evidenceWorkspace.appendEvent(this.state.runContext.runId, {
+        timestamp: Date.now(),
+        action: manifest.action,
+        url: this.state.defaultPage.url(),
+        artifacts: manifest.artifacts,
+        consoleMessages: this.state.consoleMessages.length,
+        networkRequests: this.state.networkRequests.length,
+        accessibilityCaptured: true,
+        domCaptured: true,
+        notes: manifest.review.findings
+      });
     }
+  }
+
+  async finishEvidenceRun(status: 'completed' | 'failed' | 'cancelled' = 'completed', summary?: string): Promise<unknown> {
+    const run = this.state?.runContext;
+    if (!run) return undefined;
+    const logDir = runRoot(run.runId, 'logs');
+    await mkdir(logDir, { recursive: true });
+    const activePage = this.state?.defaultPage;
+    const pageState = activePage ? await this.inspectPage({ includeA11y: true, includeDOM: true }).catch(() => undefined) : undefined;
+    const logFiles = [
+      { name: 'console.json', value: this.state?.consoleMessages || [], note: 'Console and page-error messages captured during the run.' },
+      { name: 'network.json', value: this.state?.networkRequests || [], note: 'Network requests captured during the run.' },
+      { name: 'page-state.json', value: pageState || { unavailable: true }, note: 'DOM, accessibility, URL, title, and viewport snapshot at run finalization.' }
+    ];
+    for (const log of logFiles) {
+      const path = join(logDir, log.name);
+      await writeFile(path, JSON.stringify({ runId: run.runId, createdAt: Date.now(), note: log.note, data: log.value }, null, 2), 'utf-8');
+      await evidenceWorkspace.registerArtifact({ runId: run.runId, kind: 'log', path, sourceUrls: activePage ? [activePage.url()] : [], metadata: { logType: log.name } });
+    }
+    return evidenceWorkspace.finishRun(run.runId, status, summary);
   }
 
   getRunContext(): RunContext | undefined {
     return this.state?.runContext;
+  }
+
+  private async ensureEvidenceRun(goal = 'Browser task'): Promise<RunContext> {
+    if (!this.state) throw new Error('Browser not connected. Call connect() first.');
+    if (this.state.runContext) return this.state.runContext;
+    const manifest = await evidenceWorkspace.startRun(goal);
+    const runContext: RunContext = {
+      runId: manifest.runId,
+      startTime: manifest.startedAt,
+      goal: manifest.goal,
+      requirements: manifest.requirements,
+      evidence: [],
+      currentUrl: this.state.defaultPage.url(),
+      currentAction: ''
+    };
+    this.state.runContext = runContext;
+    return runContext;
   }
 
   private getActivePage(): Page {
@@ -836,7 +919,7 @@ export class BrowserAdapter extends EventEmitter {
     return `event-${this.eventIdCounter.toString().padStart(3, '0')}`;
   }
 
-  private async findNewestRecording(dir: string): Promise<string | null> {
+  private async findNewestRecording(dir: string, afterTimestamp = 0): Promise<string | null> {
     try {
       const entries = await readdir(dir);
       const videos = entries.filter(f => f.endsWith('.webm'));
@@ -848,8 +931,9 @@ export class BrowserAdapter extends EventEmitter {
           return { full, mtime: s.mtimeMs };
         })
       );
-      withStats.sort((a, b) => b.mtime - a.mtime);
-      return withStats[0]?.full ?? null;
+      const recent = withStats.filter(item => item.mtime >= afterTimestamp - 1000);
+      recent.sort((a, b) => b.mtime - a.mtime);
+      return (recent[0] || withStats.sort((a, b) => b.mtime - a.mtime)[0])?.full ?? null;
     } catch {
       return null;
     }

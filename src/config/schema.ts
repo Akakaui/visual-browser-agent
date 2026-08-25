@@ -7,6 +7,7 @@ export interface BrowserConfig {
     recordings: string;
     downloads: string;
     uploads: string;
+    evidence: string;
   };
 }
 
@@ -59,7 +60,8 @@ export const DEFAULT_CONFIG: VisualBrowserConfig = {
       screenshots: './runs/screenshots',
       recordings: './runs/recordings',
       downloads: './runs/downloads',
-      uploads: './runs/uploads'
+      uploads: './runs/uploads',
+      evidence: './.design/browser/runs'
     }
   },
   observation: {

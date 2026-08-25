@@ -7,6 +7,8 @@ import {
   InitializeRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { browserAdapter } from '../adapter/browser-adapter.js';
+import { evidenceWorkspace } from '../evidence/index.js';
+import { retentionManager } from '../retention/manager.js';
 
 const SERVER_INSTRUCTIONS = `Visual Browser Agent - Enhanced MCP Server
 
@@ -27,6 +29,7 @@ interface MCPServerOptions {
 }
 
 export async function startMCPServer(httpPort?: number, options?: MCPServerOptions): Promise<void> {
+  await retentionManager.initialize();
   const server = new Server(
     {
       name: 'visual-browser-agent',
@@ -55,6 +58,26 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
+      {
+        name: 'evidence_start_run',
+        description: 'Start a persistent browser evidence run with a manifest and dedicated evidence folders',
+        inputSchema: { type: 'object', properties: { goal: { type: 'string' }, requirements: { type: 'array', items: { type: 'string' } } }, required: ['goal'] }
+      },
+      {
+        name: 'evidence_get_run',
+        description: 'Return the current or named evidence run manifest for the parent agent',
+        inputSchema: { type: 'object', properties: { runId: { type: 'string' } } }
+      },
+      {
+        name: 'evidence_finish_run',
+        description: 'Finish an evidence run and return its complete manifest for the parent agent',
+        inputSchema: { type: 'object', properties: { runId: { type: 'string' }, status: { type: 'string', enum: ['completed', 'failed', 'cancelled'] }, summary: { type: 'string' } } }
+      },
+      {
+        name: 'evidence_cleanup',
+        description: 'Delete expired registered evidence according to the configured retention policy',
+        inputSchema: { type: 'object', properties: {} }
+      },
       {
         name: 'browser_status',
         description: 'Get browser connection status and active tab info',
@@ -512,6 +535,30 @@ export async function startMCPServer(httpPort?: number, options?: MCPServerOptio
 
     try {
       switch (name) {
+        case 'evidence_start_run': {
+          const manifest = await browserAdapter.createRunContext(String((args as any)?.goal || 'Browser task'), Array.isArray((args as any)?.requirements) ? (args as any).requirements : []);
+          return { content: [{ type: 'text', text: JSON.stringify(manifest, null, 2) }] };
+        }
+
+        case 'evidence_get_run': {
+          const runId = (args as any)?.runId || browserAdapter.getRunContext()?.runId;
+          const manifest = runId ? await evidenceWorkspace.loadRun(runId) : undefined;
+          if (!manifest) throw new Error('No evidence run is active. Call evidence_start_run or capture evidence first.');
+          return { content: [{ type: 'text', text: JSON.stringify(manifest, null, 2) }] };
+        }
+
+        case 'evidence_finish_run': {
+          const status = ((args as any)?.status || 'completed') as 'completed' | 'failed' | 'cancelled';
+          const manifest = await browserAdapter.finishEvidenceRun(status, (args as any)?.summary);
+          if (!manifest) throw new Error('No evidence run is active. Call evidence_start_run or capture evidence first.');
+          return { content: [{ type: 'text', text: JSON.stringify(manifest, null, 2) }] };
+        }
+
+        case 'evidence_cleanup': {
+          const deleted = await retentionManager.cleanup();
+          return { content: [{ type: 'text', text: JSON.stringify({ deleted }, null, 2) }] };
+        }
+
         case 'browser_status': {
           const status = await browserAdapter.getStatus();
           return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
