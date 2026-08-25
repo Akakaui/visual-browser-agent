@@ -1,7 +1,10 @@
 import { accessSync } from 'fs';
 import { mkdir, writeFile, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
+
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const HOST_CONFIGS: Record<string, any> = {
   'claude-code': {
@@ -37,7 +40,7 @@ const HOST_CONFIGS: Record<string, any> = {
         'visual-browser/submit_public_action': 'deny'
       }
     },
-    skillsDir: '.antigravity/skills'
+    skillsDir: '.agents/skills'
   },
   'cursor': {
     mcp: {
@@ -167,13 +170,22 @@ export class HostManager {
     console.log(JSON.stringify(config, null, 2));
   }
 
-  private async generateMCPConfig(host: string, config: any): Promise<void> {
-    const mcpConfig = {
-      mcpServers: {
-        'visual-browser': config.mcp
-      }
-    };
-
+    private async generateMCPConfig(host: string, config: any): Promise<void> {
+    const mcpConfig = host === 'opencode'
+      ? {
+          mcp: {
+            'visual-browser': {
+              type: 'local',
+              command: ['npx', 'visual-browser-agent', 'mcp'],
+              enabled: true
+            }
+          }
+        }
+      : {
+          mcpServers: {
+            'visual-browser': config.mcp
+          }
+        };
     const configPath = join(process.cwd(), `.vba-mcp-${host}.json`);
     await writeFile(configPath, JSON.stringify(mcpConfig, null, 2), 'utf-8');
     console.log(`  MCP config: ${configPath}`);
@@ -194,11 +206,11 @@ export class HostManager {
 
   private getWrapperPath(host: string): string | null {
     // Use universal wrapper for all hosts
-    const universalWrapper = join('wrappers', 'universal', 'visual-browser-specialist.md');
-    const hostWrapper = join('wrappers', host, 'visual-browser-specialist.md');
+    const universalWrapper = join(PACKAGE_ROOT, 'wrappers', 'universal', 'visual-browser-specialist.md');
+    const hostWrapper = join(PACKAGE_ROOT, 'wrappers', host, 'visual-browser-specialist.md');
 
     // Check if host-specific wrapper exists, otherwise use universal
-    const hostSpecificPath = join(process.cwd(), hostWrapper);
+    const hostSpecificPath = hostWrapper;
     try {
       accessSync(hostSpecificPath);
       return hostSpecificPath;
@@ -206,7 +218,7 @@ export class HostManager {
       // Use universal wrapper
     }
 
-    const universalPath = join(process.cwd(), universalWrapper);
+    const universalPath = universalWrapper;
     try {
       accessSync(universalPath);
       return universalPath;
@@ -224,7 +236,7 @@ export class HostManager {
       'cursor': '.cursor/agents',
       'gemini': '.gemini/agents',
       'opencode': '.opencode/agents',
-      'antigravity': '.antigravity/agents',
+      'antigravity': '.agents/agents',
       'windsurf': '.windsurf/agents',
       'cline': '.cline/agents',
       'roo': '.roo/agents',
