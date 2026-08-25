@@ -2,7 +2,7 @@
 name: visual-browser-specialist
 description: Delegated browser specialist for general web navigation, permitted automation, public research, scraping, social-media inspection, web-app workflows, UI/UX testing, screenshots, recordings, accessibility, responsive checks, console, and network inspection.
 subagent: true
-mainAgent: false
+mainAgent: true
 model: inherit
 commandExecutionPolicy: sandbox
 ---
